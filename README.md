@@ -12,3 +12,8 @@ Key improvements over Emu:
 - Separation of Visual and Backend
 - Full tests and coverage
 - Easy API
+
+## Roadmap
+1.  Get the kernel of `cubes` working.  Be able to simulate cube interactions
+2.  Translate G-code to `cubes` and simulate physical part being machined
+3.  Scale up and determine collisions

@@ -7,19 +7,17 @@ from __future__ import annotations
 from typing import List
 class Cube:
     def __init__(self):
-        verticies = [
-            (0,0), # Corner 1
-            (0,0), # Corner 2
-            (0,0), # 3
-            (0,0), # 4
-            (0,0), # Corner 5
-            (0,0), # Corner 6
-            (0,0), # 7
-            (0,0), # 8
-        ]
+        maximum = [0,0,0] # X,Y,Z - maximum values - sorted for later
+        minimum = [0,0,0] # X,Y,Z - minimum values
+
     
-    def maxZ(self):
-        """Returns the Maximum Z value for the cube"""
+    def size(self):
+        """Returns the size for the cube"""
+        return [
+            self.maximum[0] - self.minimum[0],
+            self.maximum[1] - self.minimum[1],
+            self.maximum[2] - self.minimum[2]
+        ]
     
     def export(self):
         """Exports the cube to trimesh"""
@@ -29,9 +27,30 @@ class Cube:
         Cuts the cube with another defined cube
         Returns array of resulting cubes (can be empty)
         """
+
+        # First it must collide, if it doesn't, do nothing
+
+        # Check if it fully annihilates this cube
+
+        # Hole in the middle (No outer wall cut)
+
+        # Partial wall cut
+
+        # Cutting all the way through
+
     def collides_with(self, second: Cube) -> bool:
         """
         Checks if this cube collides with the provided cube
+        ```
+        return (
+            a.minX <= b.maxX &&
+            a.maxX >= b.minX &&
+            a.minY <= b.maxY &&
+            a.maxY >= b.minY &&
+            a.minZ <= b.maxZ &&
+            a.maxZ >= b.minZ
+        );
+        ```
         """
     
 
