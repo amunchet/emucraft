@@ -6,3 +6,9 @@ The goal is to determine whether or not a collision occurs during a G-code progr
 This is done through modelling of the block and resulting 3D approxmiation of the machining path, compared with the cutting tool information.
 
 It will rely on `trimesh` for visualization.  Eventually, it may use `three.js` to visualize in a separate component.
+
+Key improvements over Emu:
+
+- Separation of Visual and Backend
+- Full tests and coverage
+- Easy API
