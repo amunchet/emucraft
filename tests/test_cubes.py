@@ -44,6 +44,33 @@ def test_cut():
     Tests cut
     """
 
+    # Full annihilation
+
+    # No intersect XYZ
+    
+    # No intersect X
+
+    # No intersect Y
+
+    # No intersect Z
+
+    # Full X (Full Front cut)
+
+    # Full Y (Full Side cut)
+
+    # Full Z (Planed)
+
+    # Partial X,Z
+
+    # Partial Y,Z
+
+    # Partial X,Y
+
+    # Full through hole
+
+    # Partial through hole (most rectangles)
+
+
 def test_collides_with():
     """
     Test collides with
