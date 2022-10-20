@@ -24,3 +24,8 @@ So, using `numpy` turned out to be too slow even still.
 At roughly the 5_000 x 5_000 size, it took ~.4 seconds to remove a sample section.
 
 In C, it took .4 seconds to load the entire array, and then remove the sample section.  There wasn't a noticeable amount of time to change the sample section.
+
+I think we're going to create a Python extension to leverage the `Open3d` easy visualization.  
+
+## Resources
+- https://pythonspeed.com/articles/python-extension-performance/
