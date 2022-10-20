@@ -29,3 +29,15 @@ I think we're going to create a Python extension to leverage the `Open3d` easy v
 
 ## Resources
 - https://pythonspeed.com/articles/python-extension-performance/
+
+- http://www.open3d.org/docs/latest/python_api/open3d.visualization.draw_geometries.html
+
+- http://www.open3d.org/docs/release/tutorial/geometry/pointcloud.html
+
+- http://www.open3d.org/docs/0.9.0/tutorial/Basic/working_with_numpy.html
+
+- http://www.open3d.org/docs/0.14.1/python_api/open3d.visualization.RenderOption.html?highlight=renderoption
+
+- http://www.open3d.org/docs/0.14.1/tutorial/visualization/customized_visualization.html?highlight=renderoption
+
+- https://github.com/isl-org/Open3D/issues/3307
