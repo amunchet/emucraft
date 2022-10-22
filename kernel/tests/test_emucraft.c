@@ -44,6 +44,8 @@ void setup(){
 		BLOCK[i] = 1000;
 
 	}
+	// Print 10 x 10 block
+	print_block(BLOCK, 10, 10);
 }
 int check_correct_cut(int x,int y){
 	return BLOCK[x * DIM_X + y];
@@ -58,7 +60,7 @@ int test_cut(){
 		return 1;
 	}
 	
-	int success = cut(BLOCK, CUTTER_X, CUTTER_Y, CUTTER_DIAMETER, CUTTER_HEIGHT);
+	int success = cut(BLOCK, CUTTER_X, CUTTER_Y, CUTTER_DIAMETER, CUTTER_HEIGHT, DIM_X, DIM_Y);
 	if(success != 0){
 		printf("ERROR - block not cut properly.");
 		return 1;
@@ -83,7 +85,7 @@ int test_correct_circle_boundary(){
 		return 1;
 	}
 
-	cut(BLOCK, CUTTER_X, CUTTER_Y, CUTTER_DIAMETER, CUTTER_HEIGHT);
+	cut(BLOCK, CUTTER_X, CUTTER_Y, CUTTER_DIAMETER, CUTTER_HEIGHT, DIM_X, DIM_Y);
 	
 	int x = 0;
 	int y = 0;
