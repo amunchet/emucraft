@@ -13,6 +13,15 @@ void print_block(int* BLOCK, int DIM_X, int DIM_Y){
 		printf("\n");
 	}
 }
+bool check_distance(int x, int y, int CUTTER_X, int CUTTER_Y, int CUTTER_DIAMETER){
+	int distance_x = abs(x - CUTTER_X);
+	int distance_y = abs(y - CUTTER_Y);
+
+	if(sqrt((distance_x * distance_x) + (distance_y * distance_y)) < CUTTER_DIAMETER/2){
+		return true;	
+	}
+	return false;
+}
 
 int cut(int* BLOCK, int CUTTER_X, int CUTTER_Y, int CUTTER_DIAMETER, int CUTTER_HEIGHT, int BLOCK_X, int BLOCK_Y){
 	
@@ -57,6 +66,13 @@ int cut(int* BLOCK, int CUTTER_X, int CUTTER_Y, int CUTTER_DIAMETER, int CUTTER_
 	}
 	
 	// Check for edges
+	for(int x = min_x; x<max_x; x++){
+		for(int y = min_y; y<max_y; y++){
+			if(check_distance(x, y, CUTTER_X, CUTTER_Y, CUTTER_DIAMETER) && BLOCK[x * BLOCK_X + y] > CUTTER_HEIGHT){
+				BLOCK[x * BLOCK_X +y] = CUTTER_HEIGHT;	
+			}	
+		}
+	}
 	
 	
 	return 0;
