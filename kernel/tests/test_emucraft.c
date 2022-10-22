@@ -1,4 +1,7 @@
 #include "../include/functions.h"
+#include <math.h>
+#include <stdio.h>
+
 
 int test_create_structure(){
 	// Tests creating the structure
@@ -58,11 +61,122 @@ int test_cut(){
 	return 0;
 
 }
+
+int check_correct_cut(x,y){
+	return BLOCK[x * DIM_X + y];
+}
+
 int test_correct_circle_boundary(){
 	// Test that only within the circle is cut
-	// Test something outside the circle being cut
 
-	// Test the values of the block being lower than where the circle is cutting
+	if(check_correct_cut(50,50) != 1000){
+		printf("ERROR - block not initialized properly.");
+		return 1;
+	}
+
+	cut(BLOCK, CUTTER_X, CUTTER_Y, CUTTER_DIAMETER, CUTTER_HEIGHT);
+	
+	int x = 0;
+	int y = 0;
+
+
+	// Left Boundary
+	x = CUTTER_X - ceil(CUTTER_DIAMETER/2);
+	y = CUTTER_Y;
+	
+	if(check_correct_cut(x,y) != CUTTER_HEIGHT){
+		printf("ERROR - Top Left Boundary not the right height: %d\n", BLOCK[x * DIM_X + y]);
+		return 1;
+	}
+	if(check_correct_cut(x,y+1) == CUTTER_HEIGHT){
+		printf("ERROR - Top Left Boundary + 1 is at the wrong height: %d\n", check_correct_cut(x,y+1));
+		return 1;
+
+	}
+	if(check_correct_cut(x+1, y) == CUTTER_HEIGHT){
+		printf("ERROR - Top Left Boundary + 1 is at the wrong height: %d\n", check_correct_cut(x+1, y));
+		return 1;
+
+	}
+	
+	// Right Boundary
+	x = CUTTER_X + ceil(CUTTER_DIAMETER/2);
+	y = CUTTER_Y;
+
+	if(check_correct_cut(x,y) != CUTTER_HEIGHT){
+		printf("ERROR - Top Left Boundary not the right height: %d\n", BLOCK[x * DIM_X + y]);
+		return 1;
+	}
+	if(check_correct_cut(x,y+1) == CUTTER_HEIGHT){
+		printf("ERROR - Top Left Boundary + 1 is at the wrong height: %d\n", check_correct_cut(x,y+1));
+		return 1;
+
+	}
+	if(check_correct_cut(x+1, y) == CUTTER_HEIGHT){
+		printf("ERROR - Top Left Boundary + 1 is at the wrong height: %d\n", check_correct_cut(x+1, y));
+		return 1;
+
+	}
+	
+
+	// Top Boundary
+	y = CUTTER_Y + ceil(CUTTER_DIAMETER/2);
+	x = CUTTER_X;
+
+	if(check_correct_cut(x,y) != CUTTER_HEIGHT){
+		printf("ERROR - Top Left Boundary not the right height: %d\n", BLOCK[x * DIM_X + y]);
+		return 1;
+	}
+	if(check_correct_cut(x,y+1) == CUTTER_HEIGHT){
+		printf("ERROR - Top Left Boundary + 1 is at the wrong height: %d\n", check_correct_cut(x,y+1));
+		return 1;
+
+	}
+	if(check_correct_cut(x+1, y) == CUTTER_HEIGHT){
+		printf("ERROR - Top Left Boundary + 1 is at the wrong height: %d\n", check_correct_cut(x+1, y));
+		return 1;
+
+	}
+
+	// Bottom Boundary
+	x = CUTTER_X;
+	y = CUTTER_Y + ceil(CUTTER_DIAMETER/2);
+
+	if(check_correct_cut(x,y) != CUTTER_HEIGHT){
+		printf("ERROR - Top Left Boundary not the right height: %d\n", BLOCK[x * DIM_X + y]);
+		return 1;
+	}
+	if(check_correct_cut(x,y+1) == CUTTER_HEIGHT){
+		printf("ERROR - Top Left Boundary + 1 is at the wrong height: %d\n", check_correct_cut(x,y+1));
+		return 1;
+
+	}
+	if(check_correct_cut(x+1, y) == CUTTER_HEIGHT){
+		printf("ERROR - Top Left Boundary + 1 is at the wrong height: %d\n", check_correct_cut(x+1, y));
+		return 1;
+
+	}
+	
+	// Point on circle x = r * sin theta, y = r * cos theta
+	int angle = PI/180 * 45;
+	x = ceil(sin(angle) * CUTTER_DIAMETER/2);
+	y = ceil(cos(angle) * CUTTER_DIAMETER/2);
+	
+	if(check_correct_cut(x,y) != CUTTER_HEIGHT){
+		printf("ERROR - Top Left Boundary not the right height: %d\n", BLOCK[x * DIM_X + y]);
+		return 1;
+	}
+	if(check_correct_cut(x,y+1) == CUTTER_HEIGHT){
+		printf("ERROR - Top Left Boundary + 1 is at the wrong height: %d\n", check_correct_cut(x,y+1));
+		return 1;
+
+	}
+	if(check_correct_cut(x+1, y) == CUTTER_HEIGHT){
+		printf("ERROR - Top Left Boundary + 1 is at the wrong height: %d\n", check_correct_cut(x+1, y));
+		return 1;
+
+	}
+
 	
 	// Test to make sure that a value is returned when the block has been cut
 	// Test to make sure a different value is returned when the block has not
@@ -82,6 +196,24 @@ int test_read_in_file(){
 
 int main(){
 	setup();
-	return test_cut();
+	
+
+	int output = 0;
+
+	// Test at Normal height
+	output = test_cut();
+	printf("Output of test_cut: %d\n", output);
+	if(output != 0){
+		return output;
+	}
+	
+
+	// Test recutting (or cutting at lower height)
+	test_cut();
+	printf("Output of test_cut: %d\n", output);
+	if(output != 0){
+		return output;
+	}
+
 }
 
