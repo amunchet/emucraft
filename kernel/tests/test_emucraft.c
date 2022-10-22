@@ -3,11 +3,11 @@
 #include <stdio.h>
 
 
-int test_create_structure(){
+void test_create_structure(){
 	// Tests creating the structure
 }
 
-int test_freeing_structure(){
+void test_freeing_structure(){
 	// Tests tearing down the structure
 }
 
@@ -26,7 +26,7 @@ int CUTTER_Y;
 int* BLOCK;
 
 
-int setup(){
+void setup(){
 	// Sets up the variables
 	DIM_X = 1000;
 	DIM_Y = 1000;
@@ -38,12 +38,23 @@ int setup(){
 	
 	CUTTER_X = 100;
 	CUTTER_Y = 100;
+
+	BLOCK = malloc ((DIM_X * DIM_Y) * sizeof(int));
+	for (int i=0; i<DIM_X * DIM_Y; i++){
+		BLOCK[i] = 1000;
+
+	}
+}
+int check_correct_cut(int x,int y){
+	return BLOCK[x * DIM_X + y];
 }
 int test_cut(){
 	// Tests cutting the structure (removing a circle)
+	
+	printf("Starting up test_cut...");
 
-	if(BLOCK[50 * DIM_X + 50] != 1000){
-		printf("ERROR - block not initialized properly.");
+	if(check_correct_cut(50,50) != 1000){
+		printf("ERROR - block not initialized properly: %d\n", check_correct_cut(50,50));
 		return 1;
 	}
 	
@@ -62,9 +73,7 @@ int test_cut(){
 
 }
 
-int check_correct_cut(x,y){
-	return BLOCK[x * DIM_X + y];
-}
+
 
 int test_correct_circle_boundary(){
 	// Test that only within the circle is cut
@@ -182,26 +191,32 @@ int test_correct_circle_boundary(){
 	// Test to make sure a different value is returned when the block has not
 
 	// Test to make sure the difference (delta) is returned somewhere
-
+	return 0;
 }
 
 int test_read_in_file(){
 	// Tests reading in a processed file (not G-code, the XYZ file plus cutting information)
 
 	// What if the file is bad formatting?
-
+	return 0;
 }
 
 
 
 int main(){
+	printf("Starting setup...\n");
 	setup();
+
+	printf("Setup done\n");
+
 	
 
 	int output = 0;
 
 	// Test at Normal height
+
 	output = test_cut();
+
 	printf("Output of test_cut: %d\n", output);
 	if(output != 0){
 		return output;
@@ -214,6 +229,7 @@ int main(){
 	if(output != 0){
 		return output;
 	}
-
+	
+	return 0;
 }
 
