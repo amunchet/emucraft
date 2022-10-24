@@ -22,7 +22,7 @@ int check_distance(int x, int y, int CUTTER_X, int CUTTER_Y, int CUTTER_DIAMETER
 	int value = sqrt((distance_x * distance_x) + (distance_y * distance_y)); 
 	int radius = CUTTER_DIAMETER/2;
 
-	printf("[check_distance] (%d, %d) with cutter (%d, %d) (d: %d) = %d < %d\n", x, y, CUTTER_X, CUTTER_Y, CUTTER_DIAMETER, value , radius);
+	//printf("[check_distance] (%d, %d) with cutter (%d, %d) (d: %d) = %d < %d\n", x, y, CUTTER_X, CUTTER_Y, CUTTER_DIAMETER, value , radius);
 
 	if(value < radius) {
 		return 1;	
