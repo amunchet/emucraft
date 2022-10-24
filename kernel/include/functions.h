@@ -5,22 +5,29 @@
 #define PI 3.14159265
 
 
-void print_block(int* BLOCK, int DIM_X, int DIM_Y){
-	for(int x = 0; x<DIM_X; x++){
-		for(int y = 0; y<DIM_Y; y++){
-			printf("%d ", BLOCK[x * DIM_X + y]);
+void print_block(int* BLOCK, int DIM_X, int DIM_Y, int start_x, int start_y, int size){
+	for(int x = start_x; x<start_x+size; x++){
+		for(int y = start_y; y<start_y+size; y++){
+			if(y < DIM_Y && x < DIM_X && x >= 0 && y >= 0){
+				printf(" %d\t", BLOCK[x * DIM_X + y]);
+			}
 		}
 		printf("\n");
 	}
 }
-bool check_distance(int x, int y, int CUTTER_X, int CUTTER_Y, int CUTTER_DIAMETER){
+int check_distance(int x, int y, int CUTTER_X, int CUTTER_Y, int CUTTER_DIAMETER){
 	int distance_x = abs(x - CUTTER_X);
 	int distance_y = abs(y - CUTTER_Y);
 
-	if(sqrt((distance_x * distance_x) + (distance_y * distance_y)) < CUTTER_DIAMETER/2){
-		return true;	
+	int value = sqrt((distance_x * distance_x) + (distance_y * distance_y)); 
+	int radius = CUTTER_DIAMETER/2;
+
+	printf("[check_distance] (%d, %d) with cutter (%d, %d) (d: %d) = %d < %d\n", x, y, CUTTER_X, CUTTER_Y, CUTTER_DIAMETER, value , radius);
+
+	if(value < radius) {
+		return 1;	
 	}
-	return false;
+	return 0;
 }
 
 int cut(int* BLOCK, int CUTTER_X, int CUTTER_Y, int CUTTER_DIAMETER, int CUTTER_HEIGHT, int BLOCK_X, int BLOCK_Y){
@@ -75,5 +82,18 @@ int cut(int* BLOCK, int CUTTER_X, int CUTTER_Y, int CUTTER_DIAMETER, int CUTTER_
 	}
 	
 	
+	return 0;
+}
+
+int write_block(int* BLOCK, int DIM_X, int DIM_Y, char* filename){
+	printf("Writing to %s\n", filename);
+	FILE *fp = fopen(filename, "w+");
+	for(int x = 0; x<DIM_X; x++){
+		for(int y = 0; y<DIM_Y; y++){
+			fprintf(fp, "%d ", BLOCK[x * DIM_X + y]);
+		}
+		fprintf(fp,"\n");
+	}
+	fclose(fp);
 	return 0;
 }
