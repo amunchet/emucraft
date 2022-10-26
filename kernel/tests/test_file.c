@@ -46,6 +46,15 @@ int setup(){
 
 int test_read_in_file(){
 	// Tests reading in a processed file (not G-code, the XYZ file plus cutting information)
+	printf("Block before file...\n");
+	print_block(BLOCK, DIM_X, DIM_Y, 0,0, 10);
+
+	process_from_file(BLOCK, DIM_X, DIM_Y, "test.xyz");
+
+	printf("Block after file...\n");
+	print_block(BLOCK, DIM_X, DIM_Y, 0,0, 10);
+
+	
 
 	// What if the file is bad formatting?
 	return 0;
@@ -91,9 +100,17 @@ int main(){
 		printf("Setup failed\n");
 		return output;
 	}
+	printf("Starting write file...\n");
 	output = test_write_file();
 	if(output != 0){
 		printf("Test Write File failed.\n");
 		return output;
 	}
+	printf("Starting read file...\n");
+	output = test_read_in_file();
+	if(output != 0){
+		printf("Test Read File failed.\n");
+		return output;
+	}
+
 }	
