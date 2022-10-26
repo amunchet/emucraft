@@ -73,16 +73,20 @@ int cut(int* BLOCK, int CUTTER_X, int CUTTER_Y, int CUTTER_DIAMETER, int CUTTER_
 	}
 	
 	// Check for edges
+	
+	int total_removed = 0; // This is .001 cubic inches
+
 	for(int x = min_x; x<max_x; x++){
 		for(int y = min_y; y<max_y; y++){
 			if(check_distance(x, y, CUTTER_X, CUTTER_Y, CUTTER_DIAMETER) && BLOCK[x * BLOCK_X + y] > CUTTER_HEIGHT){
+				total_removed += BLOCK[x * BLOCK_X + y] - CUTTER_HEIGHT;
 				BLOCK[x * BLOCK_X +y] = CUTTER_HEIGHT;	
 			}	
 		}
 	}
 	
 	
-	return 0;
+	return total_removed;
 }
 
 int write_block(int* BLOCK, int DIM_X, int DIM_Y, char* filename){
@@ -96,4 +100,20 @@ int write_block(int* BLOCK, int DIM_X, int DIM_Y, char* filename){
 	}
 	fclose(fp);
 	return 0;
+}
+
+int process_from_file(int* BLOCK, int DIM_X, int DIM_Y, char* filename){
+	/*
+	Processes a XYZ File
+	
+	Format:
+		[X] [Y] [Z] [Cutter Diameter] [Cutter Z value]
+	*/
+
+	FILE *fp = fopen(filename, "r");
+	int x, y, z, cutter_diameter, cutter_z;
+	
+	fscanf(fp, "%d %d %d %d %d\n", &x, &y, &z, &cutter_diameter, &cutter_z);
+	
+	cut(BLOCK, CUTTER_X, CUTTER_Y, CUTTER_DIAMETER, CUTTER_HEIGHT, DIM_X, DIM_Y);
 }
