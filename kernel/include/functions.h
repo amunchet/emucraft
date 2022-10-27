@@ -123,7 +123,7 @@ int process_from_file(int* BLOCK, int DIM_X, int DIM_Y, char* filename){
 	Processes a XYZ File
 	
 	Format:
-		[X] [Y] [Z] [Cutter Diameter] [Cutter Z value]
+		[X] [Y] [Z] [Cutter Diameter] [Cutter Z value] [Tool Holder Diameter] [Tool Holder Z (Bottom)]
 	*/
 
 	FILE *fp = fopen(filename, "r");
