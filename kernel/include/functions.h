@@ -118,7 +118,7 @@ int cut(int *BLOCK, int CUTTER_X, int CUTTER_Y, int CUTTER_DIAMETER, int CUTTER_
 	FILE *fp;
 	if(delta_filename != NULL){
 		printf("Writing to %s\n", delta_filename);
-		fp = fopen(delta_filename, "w");
+		fp = fopen(delta_filename, "a");
 	}
 
 	for (int x = min_x; x < max_x; x++)
