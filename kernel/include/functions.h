@@ -183,6 +183,15 @@ int process_from_file(int *BLOCK, int DIM_X, int DIM_Y, char *filename)
 
 	int actual_delta_count = 0;
 
+	char *output_filename;
+	sprintf(output_filename, "%s.sim", filename);
+
+	FILE *delta_output = fopen(output_filename, "w");
+
+	int delta_buffer = 512;
+	char *delta_lines[delta_buffer];
+
+	int line_count = 0;
 	while(EOF != fscanf(fp, "%d %d %d %d %d %d\n", &x, &y, &z, &cutter_diameter, &tool_holder_diameter, &tool_holder_z)){
 		printf("%d %d %d %d %d %d\n", x, y, z, cutter_diameter, tool_holder_diameter, tool_holder_z);
 
@@ -200,11 +209,24 @@ int process_from_file(int *BLOCK, int DIM_X, int DIM_Y, char *filename)
 		printf("[DEBUG] Out of cut: %d.\n", actual_delta_count);
 		for(int i = 0; i<actual_delta_count; i++){
 			printf("Delta: %d (%d, %d, %d)\n", i, delta[i][0], delta[i][1], delta[i][2]);
+
+			sprintf(delta_lines[line_count], "%d %d %d %d\n", line_count, delta[i][0], delta[i][1], delta[i][2]);
+			
+
 		}
 		// TODO: Second cut for checking
 		
 		// TODO: Temporary - write delta to file for animation
+		if(line_count > 0 && line_count % delta_buffer == 0){
+			for(int i = 0; i<delta_buffer; i++){
+				fprinftf(delta_output, "%s", delta_lines[line_count]);
+			}
+			line_count = -1;
+		}
+		line_count++;
 	}
+	fclose(fp);
+	fclose(delta_output);
 
 	
 	return 1;
