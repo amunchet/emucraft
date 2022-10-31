@@ -219,7 +219,7 @@ int process_from_file(int *BLOCK, int DIM_X, int DIM_Y, char *filename)
 		// TODO: Temporary - write delta to file for animation
 		if(line_count > 0 && line_count % delta_buffer == 0){
 			for(int i = 0; i<delta_buffer; i++){
-				fprinftf(delta_output, "%s", delta_lines[line_count]);
+				fprintf(delta_output, "%s", delta_lines[line_count]);
 			}
 			line_count = -1;
 		}
