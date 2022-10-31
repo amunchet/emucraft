@@ -8,6 +8,23 @@ import time
 
 dim_x = 1000
 dim_y = 1000
+# Need to add Z points for the visual side walls
+def add_z_points(block, start, diff, block_x, block_y):
+    """
+    Add Z points to steps
+    """
+    x_start, y_start, z_start = start
+    x_diff, y_diff, z_diff = diff
+
+    if(z_start[2] > z_diff[2]):
+        max_z = z_start[2]
+        min_z = z_diff[2]
+    else:
+        max_z = z_diff[2]
+        min_z = z_start[2]
+    
+    for i in range(min_z, max_z):
+        block.append([x_start, y_start, i])
 
 def data():
     global dim_x, dim_y
@@ -20,37 +37,9 @@ def data():
                     arr.append([x,y,int(item)])
                     
 
-    # Need to add Z points for the visual side walls
-    def add_z_points(block, start, diff, block_x, block_y):
-        """
-        Add Z points to steps
-        """
-        x_start, y_start, z_start = start
-        x_diff, y_diff, z_diff = diff
 
-        if(z_start[2] > z_diff[2]):
-            max_z = z_start[2]
-            min_z = z_diff[2]
-        else:
-            max_z = z_diff[2]
-            min_z = z_start[2]
-        
-        for i in range(min_z, max_z):
-            block.append([x_start, y_start, i])
     
-    # I know the block size
-    print("Starting to add Z points...")
-    for x in range(1, dim_x):
-        for y in range(1, dim_y):
-            current = arr[x * dim_x + y]
-            prev_x = arr[(x - 1) * dim_x + y]
-            prev_y = arr[x * dim_x + (y-1)]
-
-            if current != prev_x:
-                add_z_points(arr, (x, y, current), (x-1, y, prev_x), dim_x, dim_y)
-            
-            if current != prev_y:
-                add_z_points(arr, (x, y, current), (x, y-1, prev_y), dim_x, dim_y)
+    
     print("Done")
 
     pcd_arr = np.array(arr, dtype=np.int16)
@@ -63,10 +52,11 @@ def data():
 special_run = False
 
 def custom_draw_geometry_load_option(pcd):
+    global arr
     vis = o3d.visualization.VisualizerWithKeyCallback()
 
     def stop(vis):
-
+        global arr
         pcd_points = np.asarray(pcd.points)
 
         global special_run
@@ -89,6 +79,24 @@ def custom_draw_geometry_load_option(pcd):
 
                     current_step = step
 
+        # I know the block size
+        # TODO - This is currently broken
+        print("Starting to add Z points...")
+        arr = pcd_points
+        for x in range(1, dim_x):
+            for y in range(1, dim_y):
+                current = arr[x * dim_x + y]
+                prev_x = arr[(x - 1) * dim_x + y]
+                prev_y = arr[x * dim_x + (y-1)]
+
+                if current != prev_x:
+                    add_z_points(arr, (x, y, current), (x-1, y, prev_x), dim_x, dim_y)
+                
+                if current != prev_y:
+                    add_z_points(arr, (x, y, current), (x, y-1, prev_y), dim_x, dim_y)
+        vis.update_geometry(pcd)
+        vis.poll_events()
+        vis.update_renderer()
 
         return False
 
