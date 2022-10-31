@@ -147,20 +147,27 @@ int process_from_file(int *BLOCK, int DIM_X, int DIM_Y, char *filename)
 	Processes a XYZ File
 
 	Format:
-		[X] [Y] [Z] [Cutter Diameter] [Cutter Z value] [Tool Holder Diameter] [Tool Holder Z (Bottom)]
+		[X] [Y] [Z] [Cutter Diameter] [Tool Holder Diameter] [Tool Holder Z (Bottom)]
 		XXXXX XXXXX XXXXX XXXXXX XXXXX XXXXX XXXXX
-		6 * (5+1) + 1 * (5) = 41 is the line length
+		6 * (4+1) + 1 * (5) = 35 is the line length
 
 	*/
+
+	int x, y, z, cutter_diameter, tool_holder_diameter, tool_holder_z;
 
 	FILE *fp = fopen(filename, "r");
 	
 	assert(fp != NULL);
-	
-	int x, y, z, cutter_diameter, cutter_z;
 
-	fscanf(fp, "%d %d %d %d %d\n", &x, &y, &z, &cutter_diameter, &cutter_z);
+	while(EOF != fscanf(fp, "%d %d %d %d %d %d\n", &x, &y, &z, &cutter_diameter, &tool_holder_diameter, &tool_holder_z)){
+		printf("%d %d %d %d %d %d\n", x, y, z, cutter_diameter, tool_holder_diameter, tool_holder_z);
+	}
 
 	// cut(BLOCK, CUTTER_X, CUTTER_Y, CUTTER_DIAMETER, CUTTER_HEIGHT, DIM_X, DIM_Y);
+
+	// TODO: Second cut for checking
+	
+	// TODO: Temporary - write delta to file for animation
+	
 	return 1;
 }
