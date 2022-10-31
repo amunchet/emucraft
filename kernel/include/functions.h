@@ -226,6 +226,13 @@ int process_from_file(int *BLOCK, int DIM_X, int DIM_Y, char *filename)
 		}
 		line_count++;
 	}
+
+	// Clean up any extra delta lines
+	for (int i = 0; i < line_count; i++)
+	{
+		fprintf(delta_output, "%s", delta_lines[line_count]);
+	}
+
 	fclose(fp);
 	fclose(delta_output);
 
