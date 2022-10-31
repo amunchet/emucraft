@@ -189,9 +189,6 @@ int process_from_file(int *BLOCK, int DIM_X, int DIM_Y, char *filename)
 
 	FILE *delta_output = fopen(output_filename, "w");
 
-	int delta_buffer = 512;
-	char delta_lines[delta_buffer][50];
-
 	int line_count = 0;
 	while(EOF != fscanf(fp, "%d %d %d %d %d %d\n", &x, &y, &z, &cutter_diameter, &tool_holder_diameter, &tool_holder_z)){
 		printf("%d %d %d %d %d %d\n", x, y, z, cutter_diameter, tool_holder_diameter, tool_holder_z);
@@ -211,31 +208,17 @@ int process_from_file(int *BLOCK, int DIM_X, int DIM_Y, char *filename)
 		for(int i = 0; i<actual_delta_count; i++){
 			printf("Delta: %d (%d, %d, %d)\n", i, delta[i][0], delta[i][1], delta[i][2]);
 
-			snprintf(delta_lines[line_count], sizeof delta_lines[line_count], "%d %d %d %d\n", line_count, delta[i][0], delta[i][1], delta[i][2]);
+			fprintf(delta_output, "%d %d %d %d\n", line_count, delta[i][0], delta[i][1], delta[i][2]);
 			
-			printf("%s\n", delta_lines[line_count]);
 
 		}
 		// TODO: Second cut for checking
 		
 		// TODO: Temporary - write delta to file for animation
-		if(line_count > 0 && line_count % delta_buffer == 0){
-			for(int i = 0; i<delta_buffer; i++){
-				fprintf(delta_output, "%s", delta_lines[line_count]);
-			}
-			line_count = -1;
-		}
 		line_count++;
 	}
 
 	// Clean up any extra delta lines
-	printf("We have %d extra lines in queue\n", line_count);
-	for (int i = 0; i < line_count; i++)
-	{
-		printf("%s\n", delta_lines[line_count]);
-		fprintf(delta_output, "%s", delta_lines[line_count]);
-	}
-
 	fclose(fp);
 	fclose(delta_output);
 
