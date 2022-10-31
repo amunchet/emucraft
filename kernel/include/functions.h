@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <assert.h>
+#include <string.h>
 
 #define PI 3.14159265
 
@@ -48,8 +49,16 @@ int check_distance(int x, int y, int CUTTER_X, int CUTTER_Y, int CUTTER_DIAMETER
 	return 0;
 }
 
-int cut(int *BLOCK, int CUTTER_X, int CUTTER_Y, int CUTTER_DIAMETER, int CUTTER_HEIGHT, int BLOCK_X, int BLOCK_Y)
+int cut(int *BLOCK, int CUTTER_X, int CUTTER_Y, int CUTTER_DIAMETER, int CUTTER_HEIGHT, int BLOCK_X, int BLOCK_Y, int delta[][3], int *delta_count)
 {
+	/*
+		BLOCK - flat array of block information
+		CUTTER_X, CUTTER_Y - where the cutter is
+		CUTTER_DIAMETER - ...
+		BLOCK_X, BLOCK_Y - dimensions of the block
+		delta - an optional argument to pass out 
+			- [x][y][z]
+	*/
 
 	// Find a block around center of cutter
 
@@ -117,11 +126,21 @@ int cut(int *BLOCK, int CUTTER_X, int CUTTER_Y, int CUTTER_DIAMETER, int CUTTER_
 				total_removed += difference;
 				BLOCK[x * BLOCK_X + y] = CUTTER_HEIGHT;
 				cube_count += 1;
+
+				if(delta != NULL){
+					printf("In Delta\n");
+					delta[*delta_count][0] = x;
+					delta[*delta_count][1] = y;
+					delta[*delta_count][2] = CUTTER_HEIGHT;
+					(*delta_count) = (*delta_count) + 1;
+					printf("[DEBUG] Done in delta.\n");
+				}
+
 			}
 		}
 	}
 
-	// printf("[Cut] Removed %d number of cubes.\n", cube_count);
+	printf("[Cut] Removed %d number of cubes.\n", cube_count);
 	return total_removed;
 }
 
@@ -146,10 +165,13 @@ int process_from_file(int *BLOCK, int DIM_X, int DIM_Y, char *filename)
 	/*
 	Processes a XYZ File
 
-	Format:
+	Input Format (.xyz file):
 		[X] [Y] [Z] [Cutter Diameter] [Tool Holder Diameter] [Tool Holder Z (Bottom)]
 		XXXXX XXXXX XXXXX XXXXXX XXXXX XXXXX XXXXX
 		6 * (4+1) + 1 * (5) = 35 is the line length
+
+	Output Format (for simulation file - .sim):
+		[Step] [X] [Y] [Z value]
 
 	*/
 
@@ -159,15 +181,31 @@ int process_from_file(int *BLOCK, int DIM_X, int DIM_Y, char *filename)
 	
 	assert(fp != NULL);
 
+	int actual_delta_count = 0;
+
 	while(EOF != fscanf(fp, "%d %d %d %d %d %d\n", &x, &y, &z, &cutter_diameter, &tool_holder_diameter, &tool_holder_z)){
 		printf("%d %d %d %d %d %d\n", x, y, z, cutter_diameter, tool_holder_diameter, tool_holder_z);
+
+		int max_size;
+		max_size = ceil(((cutter_diameter / 2) ^ 2) * PI);
+		if(max_size < 50){
+			max_size = 50;
+		}
+
+		int delta[max_size][3];
+
+
+		cut(BLOCK, x, y, cutter_diameter, z, DIM_X, DIM_Y, delta, &actual_delta_count);
+
+		printf("[DEBUG] Out of cut: %d.\n", actual_delta_count);
+		for(int i = 0; i<actual_delta_count; i++){
+			printf("Delta: %d (%d, %d, %d)\n", i, delta[i][0], delta[i][1], delta[i][2]);
+		}
+		// TODO: Second cut for checking
+		
+		// TODO: Temporary - write delta to file for animation
 	}
 
-	// cut(BLOCK, CUTTER_X, CUTTER_Y, CUTTER_DIAMETER, CUTTER_HEIGHT, DIM_X, DIM_Y);
-
-	// TODO: Second cut for checking
-	
-	// TODO: Temporary - write delta to file for animation
 	
 	return 1;
 }
