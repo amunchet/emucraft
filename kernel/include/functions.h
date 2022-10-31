@@ -211,7 +211,7 @@ int process_from_file(int *BLOCK, int DIM_X, int DIM_Y, char *filename)
 		for(int i = 0; i<actual_delta_count; i++){
 			printf("Delta: %d (%d, %d, %d)\n", i, delta[i][0], delta[i][1], delta[i][2]);
 
-			sprintf(&delta_lines[line_count], "%d %d %d %d\n", line_count, delta[i][0], delta[i][1], delta[i][2]);
+			snprintf(delta_lines[line_count], sizeof delta_lines[line_count], "%d %d %d %d\n", line_count, delta[i][0], delta[i][1], delta[i][2]);
 			
 			printf("%s\n", delta_lines[line_count]);
 
