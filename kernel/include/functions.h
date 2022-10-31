@@ -194,7 +194,7 @@ int process_from_file(int *BLOCK, int DIM_X, int DIM_Y, char *filename)
 		printf("%d %d %d %d %d %d\n", x, y, z, cutter_diameter, tool_holder_diameter, tool_holder_z);
 
 		int max_size;
-		max_size = ceil(((cutter_diameter / 2) ^ 2) * PI);
+		max_size = ceil(((cutter_diameter / 2) ^ 2) * PI) + 100;
 		if(max_size < 50){
 			max_size = 50;
 		}
