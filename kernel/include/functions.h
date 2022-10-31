@@ -134,7 +134,7 @@ int cut(int *BLOCK, int CUTTER_X, int CUTTER_Y, int CUTTER_DIAMETER, int CUTTER_
 				cube_count += 1;
 
 				if(delta_filename != NULL){
-					fprintf("%d %d %d %d\n", delta_count, x, y, CUTTER_HEIGHT);
+					fprintf(fp, "%d %d %d %d\n", delta_count, x, y, CUTTER_HEIGHT);
 				}
 
 			}
