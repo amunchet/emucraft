@@ -58,17 +58,18 @@ int main(){
 	
 	printf("Starting up toy cut...");
 
-	
-	int success = process_from_file(BLOCK, DIM_X, DIM_Y, "toy.xyz");
-
-	
-	
-	success = write_block(BLOCK, DIM_X, DIM_Y, "toy.block");
+	int success = write_block(BLOCK, DIM_X, DIM_Y, "toy.block");
 	if(success != 0){
 		printf("ERROR - write failed.");
 		return 1;
 
 	}
+	
+	success = process_from_file(BLOCK, DIM_X, DIM_Y, "toy.xyz");
+
+	
+	
+	
 
 	printf("Done.\n");
 
