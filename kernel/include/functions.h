@@ -190,7 +190,7 @@ int process_from_file(int *BLOCK, int DIM_X, int DIM_Y, char *filename)
 	FILE *delta_output = fopen(output_filename, "w");
 
 	int delta_buffer = 512;
-	char *delta_lines[delta_buffer];
+	char delta_lines[delta_buffer][50];
 
 	int line_count = 0;
 	while(EOF != fscanf(fp, "%d %d %d %d %d %d\n", &x, &y, &z, &cutter_diameter, &tool_holder_diameter, &tool_holder_z)){
