@@ -231,6 +231,7 @@ int process_from_file(int *BLOCK, int DIM_X, int DIM_Y, char *filename)
 	printf("We have %d extra lines in queue\n", line_count);
 	for (int i = 0; i < line_count; i++)
 	{
+		printf("%s\n", delta_lines[line_count]);
 		fprintf(delta_output, "%s", delta_lines[line_count]);
 	}
 
