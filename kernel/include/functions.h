@@ -213,6 +213,7 @@ int process_from_file(int *BLOCK, int DIM_X, int DIM_Y, char *filename)
 
 			sprintf(delta_lines[line_count], "%d %d %d %d\n", line_count, delta[i][0], delta[i][1], delta[i][2]);
 			
+			printf("%s\n", delta_lines[line_count]);
 
 		}
 		// TODO: Second cut for checking
