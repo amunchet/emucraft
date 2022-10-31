@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include <assert.h>
 
 #define PI 3.14159265
 
@@ -147,9 +148,15 @@ int process_from_file(int *BLOCK, int DIM_X, int DIM_Y, char *filename)
 
 	Format:
 		[X] [Y] [Z] [Cutter Diameter] [Cutter Z value] [Tool Holder Diameter] [Tool Holder Z (Bottom)]
+		XXXXX XXXXX XXXXX XXXXXX XXXXX XXXXX XXXXX
+		6 * (5+1) + 1 * (5) = 41 is the line length
+
 	*/
 
 	FILE *fp = fopen(filename, "r");
+	
+	assert(fp != NULL);
+	
 	int x, y, z, cutter_diameter, cutter_z;
 
 	fscanf(fp, "%d %d %d %d %d\n", &x, &y, &z, &cutter_diameter, &cutter_z);
