@@ -5,7 +5,12 @@ import matplotlib.pyplot as plt
 import time
 
 
+
+dim_x = 1000
+dim_y = 1000
+
 def data():
+    global dim_x, dim_y
     pcd = o3d.geometry.PointCloud()
     arr = []
     with open("toy.block", "r") as f:
@@ -35,8 +40,6 @@ def data():
     
     # I know the block size
     print("Starting to add Z points...")
-    dim_x = 1000
-    dim_y = 1000
     for x in range(1, dim_x):
         for y in range(1, dim_y):
             current = arr[x * dim_x + y]
@@ -61,16 +64,32 @@ special_run = False
 
 def custom_draw_geometry_load_option(pcd):
     vis = o3d.visualization.VisualizerWithKeyCallback()
+
     def stop(vis):
+
+        pcd_points = np.asarray(pcd.points)
+
         global special_run
         special_run = not special_run
-        for i in range(0,1000):
-            if(special_run):
-                pcd.points[i] += i
+
+        with open("toy.xyz.sim") as f:
+            current_step = 0
+            for line in f.readlines():
+                step, x,y,z = line.split(" ")
                 
-                vis.update_geometry(pcd)
-                vis.poll_events()
-                vis.update_renderer()
+
+                loc = int(x) * int(dim_x) + int(y)
+                pcd_points[loc][2] = z # TODO: HARD SET X SIZE TO 1000
+
+
+                if step != current_step:
+                    vis.update_geometry(pcd)
+                    vis.poll_events()
+                    vis.update_renderer()
+
+                    current_step = step
+
+
         return False
 
     vis.register_key_callback(ord(" "), stop)
