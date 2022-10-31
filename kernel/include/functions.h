@@ -183,7 +183,7 @@ int process_from_file(int *BLOCK, int DIM_X, int DIM_Y, char *filename)
 
 	int actual_delta_count = 0;
 
-	char *output_filename;
+	char output_filename[512];
 	sprintf(output_filename, "%s.sim", filename);
 	printf("Output filename: %s\n", output_filename);
 
