@@ -201,20 +201,19 @@ int process_from_file(int *BLOCK, int DIM_X, int DIM_Y, char *filename)
 
 		int delta[max_size][3];
 
-
 		cut(BLOCK, x, y, cutter_diameter, z, DIM_X, DIM_Y, delta, &actual_delta_count);
 
 		printf("[DEBUG] Out of cut: %d.\n", actual_delta_count);
 		for(int i = 0; i<actual_delta_count; i++){
 			printf("Delta: %d (%d, %d, %d)\n", i, delta[i][0], delta[i][1], delta[i][2]);
 
+			// TODO: Temporary - write delta to file for animation
 			fprintf(delta_output, "%d %d %d %d\n", line_count, delta[i][0], delta[i][1], delta[i][2]);
 			
 
 		}
 		// TODO: Second cut for checking
 		
-		// TODO: Temporary - write delta to file for animation
 		line_count++;
 	}
 

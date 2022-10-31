@@ -59,31 +59,7 @@ int main(){
 	printf("Starting up toy cut...");
 
 	
-	int success = cut(BLOCK, CUTTER_X, CUTTER_Y, CUTTER_DIAMETER, CUTTER_HEIGHT, DIM_X, DIM_Y, NULL, NULL);
-	if(success != 0){
-		printf("ERROR - block not cut properly.");
-		return 1;
-
-	}
-	
-	for(int i = 0; i<1000; i++){
-		success = cut(BLOCK, CUTTER_X + i, CUTTER_Y, CUTTER_DIAMETER, CUTTER_HEIGHT-i, DIM_X, DIM_Y, NULL, NULL);
-		if(success != 0){
-			printf("ERROR - block not cut properly.");
-			return 1;
-
-		}
-	}
-	CUTTER_HEIGHT = 500;
-	for(int i = 0; i<1000; i++){
-		success = cut(BLOCK, CUTTER_X , CUTTER_Y - 500+ i, CUTTER_DIAMETER, CUTTER_HEIGHT, DIM_X, DIM_Y, NULL, NULL);
-		if(success != 0){
-			printf("ERROR - block not cut properly.");
-			return 1;
-
-		}
-	}
-
+	int success = process_from_file(BLOCK, DIM_X, DIM_Y, "toy.xyz");
 
 	
 	
