@@ -17,14 +17,17 @@ def add_z_points(block, start, diff, block_x, block_y):
     x_diff, y_diff, z_diff = diff
 
     if(z_start[2] > z_diff[2]):
-        max_z = z_start[2]
-        min_z = z_diff[2]
+        max_z = int(z_start[2])
+        min_z = int(z_diff[2])
     else:
-        max_z = z_diff[2]
-        min_z = z_start[2]
-    
+        max_z = int(z_diff[2])
+        min_z = int(z_start[2])
+    arr = []
     for i in range(min_z, max_z):
-        block.append([x_start, y_start, i])
+        # block = np.append(block, [x_start, y_start, i])
+        arr.append([x_start, y_start, i])
+    
+    return arr
 
 def data():
     global dim_x, dim_y
@@ -82,18 +85,37 @@ def custom_draw_geometry_load_option(pcd):
         # I know the block size
         # TODO - This is currently broken
         print("Starting to add Z points...")
+        temp_arr = []
         arr = pcd_points
+
         for x in range(1, dim_x):
             for y in range(1, dim_y):
                 current = arr[x * dim_x + y]
                 prev_x = arr[(x - 1) * dim_x + y]
                 prev_y = arr[x * dim_x + (y-1)]
 
-                if current != prev_x:
-                    add_z_points(arr, (x, y, current), (x-1, y, prev_x), dim_x, dim_y)
+
+                if current[2] != prev_x[2]:
+                    output = add_z_points(arr, (x, y, current), (x-1, y, prev_x), dim_x, dim_y)
+                    temp_arr += output
                 
-                if current != prev_y:
-                    add_z_points(arr, (x, y, current), (x, y-1, prev_y), dim_x, dim_y)
+                if current[2] != prev_y[2]:
+                    output = add_z_points(arr, (x, y, current), (x, y-1, prev_y), dim_x, dim_y)
+                    temp_arr += output
+
+
+
+        print("Temp Arr:", temp_arr[:5])
+
+        temp_pcd = o3d.geometry.PointCloud()
+        temp_pcd_arr = np.array(temp_arr, dtype=np.int16)
+        print(temp_pcd_arr)
+
+        temp_pcd.points = o3d.utility.Vector3dVector(temp_pcd_arr)
+        vis.add_geometry(temp_pcd)
+
+
+
         vis.update_geometry(pcd)
         vis.poll_events()
         vis.update_renderer()
