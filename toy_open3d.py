@@ -75,7 +75,7 @@ def check_if_needs_z(pcd_points, dim_x, x, y):
     if current[2] != prev_y[2]:
         output = add_z_points(None, (x, y, current), (x, y-1, prev_y), dim_x, None)
         temp_arr += output
-
+    
     # Return list of point groups
     return temp_arr
 
@@ -114,13 +114,14 @@ def stop(vis):
                 z_lookup[(x,y)] = temp
 
             if step != current_step:
-                vis.remove_geometry(z_point_cloud)
-                z_point_cloud = o3d.geometry.PointCloud()
-                intermediate_step = parse_z_lookup(z_lookup)
-                z_point_cloud.points = o3d.utility.Vector3dVector(
-                    np.array(intermediate_step, dtype=np.int16)
-                )
-                vis.add_geometry(z_point_cloud)
+                if int(step) % 100 == 0:
+                    vis.remove_geometry(z_point_cloud)
+                    z_point_cloud = o3d.geometry.PointCloud()
+                    intermediate_step = parse_z_lookup(z_lookup)
+                    z_point_cloud.points = o3d.utility.Vector3dVector(
+                        np.array(intermediate_step, dtype=np.int16)
+                    )
+                    vis.add_geometry(z_point_cloud)
                 # vis.update_geometry(z_point_cloud)
                 vis.update_geometry(pcd)
                 vis.poll_events()
@@ -128,7 +129,13 @@ def stop(vis):
 
                 current_step = step
 
-
+    vis.remove_geometry(z_point_cloud)
+    z_point_cloud = o3d.geometry.PointCloud()
+    intermediate_step = parse_z_lookup(z_lookup)
+    z_point_cloud.points = o3d.utility.Vector3dVector(
+        np.array(intermediate_step, dtype=np.int16)
+    )
+    vis.add_geometry(z_point_cloud)
     vis.update_geometry(pcd)
     vis.poll_events()
     vis.update_renderer()
