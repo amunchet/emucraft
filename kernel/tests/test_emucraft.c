@@ -76,7 +76,7 @@ int test_cut(int expected){
 	printf("Starting up test_cut...");
 
 	
-	int success = cut(BLOCK, CUTTER_X, CUTTER_Y, CUTTER_DIAMETER, CUTTER_HEIGHT, DIM_X, DIM_Y);
+	int success = cut(BLOCK, CUTTER_X, CUTTER_Y, CUTTER_DIAMETER, CUTTER_HEIGHT, DIM_X, DIM_Y, NULL, NULL);
 	if(success != expected){
 		printf("ERROR - block not cut properly: %d.  Expected: %d\n", success, expected);
 		return 1;
@@ -95,7 +95,7 @@ int test_correct_circle_boundary(){
 	}
 
 
-	int output = cut(BLOCK, CUTTER_X, CUTTER_Y, CUTTER_DIAMETER, CUTTER_HEIGHT, DIM_X, DIM_Y);
+	int output = cut(BLOCK, CUTTER_X, CUTTER_Y, CUTTER_DIAMETER, CUTTER_HEIGHT, DIM_X, DIM_Y, NULL, NULL);
 	if(output == 0){
 		printf("ERROR - no cut was made\n");
 		return 1;
