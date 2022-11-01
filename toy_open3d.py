@@ -53,16 +53,20 @@ def data():
 
 
 special_run = False
+z_point_cloud = None
 
 def custom_draw_geometry_load_option(pcd):
-    global arr
     vis = o3d.visualization.VisualizerWithKeyCallback()
 
     def stop(vis):
-        global arr
         pcd_points = np.asarray(pcd.points)
 
-        global special_run
+        global special_run, z_point_cloud
+
+        # Remove Z point cloud if it exists
+        if(z_point_cloud):
+            vis.remove_geometry(z_point_cloud)
+
         special_run = not special_run
 
         with open("toy.xyz.sim") as f:
@@ -113,6 +117,7 @@ def custom_draw_geometry_load_option(pcd):
 
         temp_pcd.points = o3d.utility.Vector3dVector(temp_pcd_arr)
         vis.add_geometry(temp_pcd)
+        z_point_cloud = temp_pcd
 
 
 
