@@ -18,8 +18,8 @@ int* BLOCK;
 
 
 // Sets up the variables
-DIM_X = 1000;
-DIM_Y = 1000;
+DIM_X = 5000;
+DIM_Y = 5000;
 
 HEIGHT = 1000; // Max is Int16, which is ~30k or 30" in the real world
 
@@ -35,7 +35,7 @@ int setup(){
 
 	BLOCK = malloc ((DIM_X * DIM_Y) * sizeof(int));
 	for (int i=0; i<DIM_X * DIM_Y; i++){
-		BLOCK[i] = 1000;
+		BLOCK[i] = 2000;
 
 	}
 	// Print 10 x 10 block
