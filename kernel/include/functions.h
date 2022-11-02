@@ -196,6 +196,12 @@ int process_from_file(int *BLOCK, int DIM_X, int DIM_Y, char *filename)
 		printf("%d %d %d %d %d %d\n", x, y, z, cutter_diameter, tool_holder_diameter, tool_holder_z);
 
 		cut(BLOCK, x, y, cutter_diameter, z, DIM_X, DIM_Y, output_filename, line_count);
+		
+		// After each cut, we'll write the block state to a file
+		char *output_filename;
+		sprintf(output_filename, "%s-%d.block", filename, line_count);
+		write_block(BLOCK, DIM_X, DIM_Y, output_filename);
+		
 		// TODO: Second cut for checking
 		
 		line_count++;
