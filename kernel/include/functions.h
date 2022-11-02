@@ -171,12 +171,14 @@ int process_from_file(int *BLOCK, int DIM_X, int DIM_Y, char *filename)
 	Processes a XYZ File
 
 	Input Format (.xyz file):
-		[X] [Y] [Z] [Cutter Diameter] [Tool Holder Diameter] [Tool Holder Z (Bottom)]
+		[X] [Y] [Z] [Cutter Diameter] [Tool Holder Diameter] [Tool Holder Z (Bottom)] [MOVE TYPE - 0: rapid, 1: normal]
 		XXXXX XXXXX XXXXX XXXXXX XXXXX XXXXX XXXXX
 		6 * (4+1) + 1 * (5) = 35 is the line length
 
 	Output Format (for simulation file - .sim):
 		[Step] [X] [Y] [Z value]
+
+	TODO: I want to know if a rapid results in a cutting move
 
 	*/
 
@@ -196,6 +198,8 @@ int process_from_file(int *BLOCK, int DIM_X, int DIM_Y, char *filename)
 		printf("%d %d %d %d %d %d\n", x, y, z, cutter_diameter, tool_holder_diameter, tool_holder_z);
 
 		cut(BLOCK, x, y, cutter_diameter, z, DIM_X, DIM_Y, output_filename, line_count);
+		// TODO: Check for rapid cut
+		
 		// TODO: Second cut for checking
 		
 		line_count++;
