@@ -199,7 +199,7 @@ int process_from_file(int *BLOCK, int DIM_X, int DIM_Y, char *filename)
 		
 		// After each cut, we'll write the block state to a file
 		char output_filename[512];
-		sprintf(output_filename, "%s-%d.block", filename, line_count);
+		sprintf(output_filename, "%s-%02d.block", filename, line_count);
 		write_block(BLOCK, DIM_X, DIM_Y, output_filename);
 		
 		// TODO: Second cut for checking
