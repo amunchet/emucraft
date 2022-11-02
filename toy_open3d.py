@@ -27,7 +27,7 @@ pcd = o3d.geometry.PointCloud()
 # pcd_arr = np.array([[x,y,int(random.random()*5000)] for x in range(0,5000) for y in range(0,5000)], dtype=np.int16) 
 
 arr = []
-with open("toy.block", "r") as f:
+with open("toy-final.block", "r") as f:
     for x, line in enumerate(f.readlines()):
         for y, item in enumerate(line.split(" ")):
             if item != "\n" and item != "":
@@ -61,8 +61,8 @@ def add_z_points(block, start, diff, block_x, block_y):
 
 # I know the block size
 print("Starting to add Z points...")
-dim_x = 1000
-dim_y = 1000
+dim_x = 5000
+dim_y = 5000
 for x in range(1, dim_x):
     for y in range(1, dim_y):
         current = arr[x * dim_x + y]
