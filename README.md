@@ -19,7 +19,9 @@ Key improvements over Emu:
 ## Roadmap
 1.  [COMPLETE] Get the kernel working.  Be able to simulate cuts and block state.
 2.  Translate G-code to `XYZ format` and simulate physical part being machined
-3.  Scale up and determine collisions
+3.  Check performance
+4.  UI frontend
+5.  Integration into production process (CI/CD)
 
 ## Performance
 So, using `numpy` turned out to be too slow even still.
