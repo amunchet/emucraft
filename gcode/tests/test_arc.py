@@ -82,12 +82,14 @@ def test_segment():
     Segments the arc
     """
 
+    # TODO: If it's too small, then just return the next point as a linear move
+    x = 0
+    y = 0
+    z = 0
+
+    assert arc.segment(start=(x,y,z), end=(x+1, y+1,z), ijk=(x+5, y+5,0)) == [(x+1,y+1)]
+
     # TODO: Need to check both clockwise (G2) and counterclockwise (G3)
 
-    # Find the minimum step angle
 
-    # Divide up the difference between the 2 angles
 
-    # Return the points list
-
-    # TODO: If it's too small, then just return the next point as a linear move
