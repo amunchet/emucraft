@@ -107,7 +107,7 @@ def segment(start, end, ijk, min_distance=1, g2=True, g3=False):
         end = start_angle + 360
     
     if g3 and start_angle > end_angle:
-        being = start_angle
+        begin = start_angle
         end = end_angle + 360
 
     if angle_step == 0:
