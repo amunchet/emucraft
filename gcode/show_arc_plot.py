@@ -58,6 +58,8 @@ def show_points():
         g3 = True,
     )
 
+    # TODO: G3 doesn't work here
+
     a = [(x[0], x[1]) for x in a]
 
     fig = plt.figure(figsize=(5,5))
