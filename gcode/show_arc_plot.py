@@ -3,6 +3,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib.patches import Arc
 
+import arc
 
 def show_two_lines():
     # create data
@@ -43,7 +44,34 @@ def show_arc():
 
     plt.show()
 
+def show_points():
+    """
+    Draws some points
+
+    """
+
+    a = arc.segment(
+        (100,0,0),
+        (0,100,0),
+        (-100, 0,0),
+        g2=False,
+        g3 = True,
+    )
+
+    a = [(x[0], x[1]) for x in a]
+
+    fig = plt.figure(figsize=(5,5))
+    ax = fig.add_subplot(1,1,1)
+    ax.set_ylim(0, 110)
+    ax.set_xlim(0, 110)
+
+    for x,y in a:
+        plt.plot(x,y, marker="o", markersize=5, markerfacecolor="green")
+    plt.show()
+
+
 
 if __name__ == "__main__":
-    show_two_lines()
-    show_arc()
+    show_points()
+    #show_two_lines()
+    #show_arc()

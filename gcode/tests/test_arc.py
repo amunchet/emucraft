@@ -117,15 +117,16 @@ def test_segment():
 
     assert arc.segment(start=(x,y,z), end=(x+1, y+1,z), ijk=(x+5, y+5,0)) == [(x+1,y+1, z)]
 
+
     # Need to check both clockwise (G2) and counterclockwise (G3)
 
     x,y,z = 1,0,0
-    assert arc.segment(start=(x,y,z), end=(0, -1, z), ijk=(0,0,0),g2=True, min_distance=1) == [
+    assert arc.segment(start=(x,y,z), end=(0, -1, z), ijk=(-1,0,0),g2=True, min_distance=1) == [
         (1,0,z),
         (0,-1,z)
     ]
 
-    assert arc.segment(start=(x,y,z), end=(0, -1, z), ijk=(0,0,0),g3=True, min_distance=1) == [
+    assert arc.segment(start=(x,y,z), end=(0, -1, z), ijk=(-1,0,0),g3=True, min_distance=1) == [
         (1,0,z),
         (0,1,z),
         (-1,0,z),
