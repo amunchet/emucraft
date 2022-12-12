@@ -54,8 +54,8 @@ def show_points():
         (100,0,0),
         (0,100,0),
         (-100, 0,0),
-        g2=False,
-        g3 = True,
+        g3 = False,
+        g2 = True 
     )
 
     # TODO: G3 doesn't work here
@@ -64,8 +64,8 @@ def show_points():
 
     fig = plt.figure(figsize=(5,5))
     ax = fig.add_subplot(1,1,1)
-    ax.set_ylim(0, 110)
-    ax.set_xlim(0, 110)
+    ax.set_ylim(-110, 110)
+    ax.set_xlim(-110, 110)
 
     for x,y in a:
         plt.plot(x,y, marker="o", markersize=5, markerfacecolor="green")
