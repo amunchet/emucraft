@@ -60,8 +60,6 @@ def test_calculate_angle():
     x2, y2, z2  = 2,0,1
     assert arc.calculate_angle((x,y,z),(x2,y2,z2)) == 315
 
-
-
 def test_find_minimum_angle_for_segment():
     """
     Q: Given a radius, what's the angle required to move a length of C (constant)?
@@ -76,6 +74,35 @@ def test_find_minimum_angle_for_segment():
     r = 2
     min_length = 1
     assert arc.find_minimum_angle_for_segment(r, min_length) == 30
+
+def test_find_point_from_angle():
+    """
+    Returns a point given an angle, center coordinates, and radius
+    """
+    center = (0,0,0)
+    radius = 2
+    
+    angle = 0
+    assert arc.calculate_point(center,radius,angle) == (2,0,0)
+
+    angle = 90
+
+    assert arc.calculate_point(center,radius,angle) == (0,2,0)
+
+    angle = 180
+
+    assert arc.calculate_point(center,radius,angle) == (-2,0,0)
+
+
+    angle = 270
+    assert arc.calculate_point(center,radius,angle) == (0,-2,0)
+
+    angle = 360
+    assert arc.calculate_point(center,radius,angle) == (2,0,0)
+
+
+    angle = -90
+    assert arc.calculate_point(center,radius,angle) == (0,-2,0)
 
 
 def test_segment():
