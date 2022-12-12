@@ -10,7 +10,7 @@ import pytest
 import os
 
 
-import gcode.gcode_parser as gcode
+import gcode_parser as gcode
 
 @pytest.fixture
 def setup():
