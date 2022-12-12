@@ -82,14 +82,25 @@ def test_segment():
     Segments the arc
     """
 
-    # TODO: If it's too small, then just return the next point as a linear move
+    # If it's too small, then just return the next point as a linear move
     x = 0
     y = 0
     z = 0
 
-    assert arc.segment(start=(x,y,z), end=(x+1, y+1,z), ijk=(x+5, y+5,0)) == [(x+1,y+1)]
+    assert arc.segment(start=(x,y,z), end=(x+1, y+1,z), ijk=(x+5, y+5,0)) == [(x+1,y+1, z)]
 
-    # TODO: Need to check both clockwise (G2) and counterclockwise (G3)
+    # Need to check both clockwise (G2) and counterclockwise (G3)
 
+    x,y,z = 1,0,0
+    assert arc.segment(start=(x,y,z), end=(0, -1, z), ijk=(0,0,0),g2=True, min_distance=1) == [
+        (1,0,z),
+        (0,-1,z)
+    ]
 
+    assert arc.segment(start=(x,y,z), end=(0, -1, z), ijk=(0,0,0),g3=True, min_distance=1) == [
+        (1,0,z),
+        (0,1,z),
+        (-1,0,z),
+        (0,-1,z)
+    ]
 
