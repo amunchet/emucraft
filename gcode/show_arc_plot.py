@@ -69,10 +69,13 @@ def show_points():
     ax.set_ylim(-110, 110)
     ax.set_xlim(-110, 110)
 
-    fig.suptitle("G2 Normal", fontsize=14, fontweight="bold")
+    fig.suptitle("G2 Normal (dark is first)", fontsize=14, fontweight="bold")
 
-    for x,y in a:
-        plt.plot(x,y, marker="o", markersize=5, markerfacecolor="green")
+    #for x,y in a:
+    #    plt.plot(x,y, marker="o", markersize=5, markerfacecolor="green")
+
+    plt.scatter([x[0] for x in a], [x[1] for x in a], c=[i for i in range(0, len(a))], cmap="jet")
+    
     plt.show()
 
     print("G3 Abnormal")
@@ -95,8 +98,9 @@ def show_points():
     ax.set_ylim(-110, 110)
     ax.set_xlim(-110, 110)
 
-    for x,y in a:
-        plt.plot(x,y, marker="o", markersize=5, markerfacecolor="green")
+    #for x,y in a:
+    #    plt.plot(x,y, marker="o", markersize=5, markerfacecolor="green")
+    plt.scatter([x[0] for x in a], [x[1] for x in a], c=[i for i in range(0, len(a))], cmap="jet")
     plt.show()
 
     print("G3 Normal")
@@ -120,8 +124,9 @@ def show_points():
     ax.set_ylim(-110, 110)
     ax.set_xlim(-110, 110)
 
-    for x,y in a:
-        plt.plot(x,y, marker="o", markersize=5, markerfacecolor="green")
+    #for x,y in a:
+    #    plt.plot(x,y, marker="o", markersize=5, markerfacecolor="green")
+    plt.scatter([x[0] for x in a], [x[1] for x in a], c=[i for i in range(0, len(a))], cmap="jet")
     plt.show()
 
 
@@ -144,8 +149,10 @@ def show_points():
     ax.set_ylim(-110, 110)
     ax.set_xlim(-110, 110)
 
-    for x,y in a:
-        plt.plot(x,y, marker="o", markersize=5, markerfacecolor="green")
+    #for x,y in a:
+    #    plt.plot(x,y, marker="o", markersize=5, markerfacecolor="green")
+    plt.scatter([x[0] for x in a], [x[1] for x in a], c=[i for i in range(0, len(a))], cmap="jet")
+
     plt.show()
 
 if __name__ == "__main__":
