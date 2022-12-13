@@ -1,4 +1,6 @@
 # Emucraft
+
+## TODO: Need to have a block diagram of the pipeline (Gcode parser -> Arc helper -> C Kernel -> Blocks output -> Python renderer web page results)
 Emucraft is the child of Emu.  
 
 The goal is to determine whether or not a collision occurs during a G-code program.
@@ -19,6 +21,7 @@ Key improvements over Emu:
 ## Roadmap
 1.  [COMPLETE] Get the kernel working.  Be able to simulate cuts and block state.
 2.  Translate G-code to `XYZ format` and simulate physical part being machined
+    a.  [COMPLETE] Arc helper for helical interpolation
 3.  Check performance
 4.  UI frontend
 5.  Integration into production process (CI/CD)
