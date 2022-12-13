@@ -131,3 +131,4 @@ def test_segment():
         (-1,0,0),
     }
 
+    # TODO: Want to check the ordering - bring in from show_arc_plot

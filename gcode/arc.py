@@ -134,6 +134,13 @@ def segment(start, end, ijk, min_distance=1, g2=True, g3=False):
         points.append(calculate_point(center, radius, i))
     
 
-    # print()
-    return set(points)
+    def f7(seq):
+        seen = set()
+        seen_add = seen.add
+        return [x for x in seq if not (x in seen or seen_add(x))]   
+
+    if g2:
+        return reversed(f7(points))
+
+    return f7(points)
 

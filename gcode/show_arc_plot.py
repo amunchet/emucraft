@@ -62,6 +62,7 @@ def show_points():
 
 
     a = [(x[0], x[1]) for x in a]
+    print(a)
 
     fig = plt.figure(figsize=(5,5))
     ax = fig.add_subplot(1,1,1)
@@ -86,6 +87,7 @@ def show_points():
 
 
     a = [(x[0], x[1]) for x in a]
+    print(a)
 
     fig = plt.figure(figsize=(5,5))
     fig.suptitle("G3 Abnormal", fontsize=14, fontweight="bold")
@@ -110,6 +112,7 @@ def show_points():
 
 
     a = [(x[0], x[1]) for x in a]
+    print(a)
 
     fig = plt.figure(figsize=(5,5))
     fig.suptitle("G3 Normal", fontsize=14, fontweight="bold")
@@ -133,6 +136,7 @@ def show_points():
 
 
     a = [(x[0], x[1]) for x in a]
+    print(a)
 
     fig = plt.figure(figsize=(5,5))
     fig.suptitle("G2 Abnormal", fontsize=14, fontweight="bold")
