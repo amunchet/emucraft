@@ -53,14 +53,13 @@ def show_points():
     print("G2 normal")
 
     a = arc.segment(
-        (100,0,0),
         (0,100,0),
-        (-100, 0,0),
+        (100,0,0),
+        (0,-100,0),
         g3 = False,
         g2 = True 
     )
 
-    # TODO: G3 doesn't work here
 
     a = [(x[0], x[1]) for x in a]
 
@@ -69,6 +68,8 @@ def show_points():
     ax.set_ylim(-110, 110)
     ax.set_xlim(-110, 110)
 
+    fig.suptitle("G2 Normal", fontsize=14, fontweight="bold")
+
     for x,y in a:
         plt.plot(x,y, marker="o", markersize=5, markerfacecolor="green")
     plt.show()
@@ -76,18 +77,18 @@ def show_points():
     print("G3 Abnormal")
 
     a = arc.segment(
-        (100,0,0),
         (0,100,0),
-        (-100, 0,0),
+        (100,0,0),
+        (0,-100,0),
         g3 = True,
         g2 = False, 
     )
 
-    # TODO: G3 doesn't work here
 
     a = [(x[0], x[1]) for x in a]
 
     fig = plt.figure(figsize=(5,5))
+    fig.suptitle("G3 Abnormal", fontsize=14, fontweight="bold")
     ax = fig.add_subplot(1,1,1)
     ax.set_ylim(-110, 110)
     ax.set_xlim(-110, 110)
@@ -100,9 +101,9 @@ def show_points():
 
 
     a = arc.segment(
-        (0,100,0),
         (100,0,0),
-        (0,-100,0),
+        (0,100,0),
+        (-100,0,0),
         g3 = True,
         g2 = False, 
     )
@@ -111,6 +112,7 @@ def show_points():
     a = [(x[0], x[1]) for x in a]
 
     fig = plt.figure(figsize=(5,5))
+    fig.suptitle("G3 Normal", fontsize=14, fontweight="bold")
     ax = fig.add_subplot(1,1,1)
     ax.set_ylim(-110, 110)
     ax.set_xlim(-110, 110)
@@ -122,18 +124,18 @@ def show_points():
 
     print("G2 Abnormal")
     a = arc.segment(
-        (0,100,0),
         (100,0,0),
-        (0,-100,0),
+        (0,100,0),
+        (-100,0,0),
         g3 = False,
         g2 = True, 
     )
 
-    # TODO: G3 doesn't work here
 
     a = [(x[0], x[1]) for x in a]
 
     fig = plt.figure(figsize=(5,5))
+    fig.suptitle("G2 Abnormal", fontsize=14, fontweight="bold")
     ax = fig.add_subplot(1,1,1)
     ax.set_ylim(-110, 110)
     ax.set_xlim(-110, 110)

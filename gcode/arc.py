@@ -52,12 +52,12 @@ def calculate_point(center, radius, angle):
     x,y,z = center
     angle_rad = math.radians(angle)
 
-    print("[Calcualte Points] center:", center, " and radius:", radius)
+    # print("[Calcualte Points] center:", center, " and radius:", radius)
 
     point_x = int(round(x + (radius * math.cos(angle_rad)), 0))
     point_y = int(round(y + (radius * math.sin(angle_rad)), 0))
 
-    print("[Calculate Point] x:", point_x, ", y:", point_y, ", z:", z)
+    # print("[Calculate Point] x:", point_x, ", y:", point_y, ", z:", z)
 
     return (point_x, point_y, z)
 
@@ -95,41 +95,45 @@ def segment(start, end, ijk, min_distance=1, g2=True, g3=False):
         raise Exception("Cannot have both G2 and G3 set to true")
     
     if g2 and start_angle > end_angle:
+        # print("G2 and start > end", start_angle, end_angle)
         begin = end_angle
         end = start_angle
     
     if g2 and start_angle < end_angle:
-        begin = start_angle
-        end = end_angle
-    
-    if g3 and start_angle < end_angle:
+        # print("G2 and start < end", start_angle, end_angle)
         begin = end_angle
         end = start_angle + 360
     
+    if g3 and start_angle < end_angle:
+        # print("G3 and start < end", start_angle, end_angle)
+        begin = start_angle
+        end = end_angle
+    
     if g3 and start_angle > end_angle:
+        # print("G3 and start > end", start_angle, end_angle)
         begin = start_angle
         end = end_angle + 360
 
     if angle_step == 0:
         angle_step = 1
 
-    print("Begin:", begin)
-    print("End:",end)
-    print("Angle step:", angle_step)
+    # print("Begin:", begin)
+    # print("End:",end)
+    # print("Angle step:", angle_step)
 
 
-    print()
+    # print()
 
-    print("center:", center)
-    print("Radius:", radius)
-    print()
+    # print("center:", center)
+    # print("Radius:", radius)
+    # print()
 
     points = []
     for i in range(begin, end, angle_step):
-        print("Loop Angle:", i)
+        # print("Loop Angle:", i)
         points.append(calculate_point(center, radius, i))
     
 
-    print()
+    # print()
     return set(points)
 
