@@ -2,3 +2,6 @@
 """
 G-code parser
 """
+
+class NotImplementedException(Exception):
+    pass

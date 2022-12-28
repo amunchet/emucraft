@@ -3,7 +3,7 @@
 Tests Gcode functions
 
 Output XYZ file format (from `functions.h`)
-    [X] [Y] [Z] [Cutter Diameter] [Tool Holder Diameter] [Tool Holder Z (Bottom)] [MOVE TYPE - 0: rapid, 1: normal]
+    [X] [Y] [Z] [Cutter Diameter] [Tool Holder Diameter] [Tool Holder Z (Bottom)] [MOVE TYPE - 0: non-cutting , 1: normal]
     XXXXX XXXXX XXXXX XXXXXX XXXXX XXXXX XXXXX
 """
 import pytest
@@ -88,6 +88,7 @@ def test_g0_g1(setup):
         - Want optimized for above block height
     """
     # Unoptimized - rapid below 1.0
+    test_parse_comments(setup)
 
     input = """
     N10 G90 G00 X10. Y10. Z0.99
@@ -106,7 +107,7 @@ def test_g0_g1(setup):
         f"14800 13350 1000 1250 10000 {1000 + 750} 1"
     ]
 
-def test_g2_g3(setup):
+def test_g2(setup):
     """
     G2/G3 - Helical interpolation
     
@@ -125,22 +126,98 @@ def test_g2_g3(setup):
     https://ncviewer.com/ is your friend
     """
 
+    # Half circle clockwise
+    test_parse_comments(setup)
+    input = """
+    N20 G02 G02 X5. Y2. I3. J3. F20 
+    """
+
+    assert setup.block_offsets == {
+        "x" : 2.8,
+        "y": 0.35,
+        "z" : 0
+    }
+
+    assert setup.parse_line(input)
+
+    assert len(setup.lines) == 251
+    assert setup.lines[0] == f"{2800-52} {350+53} 1000 1250 10000 {990 + 750} 0"
+    assert setup.lines[-1] == f"{6813+2800} {1140+350} 1000 1250 10000 {990 + 750} 0"
+
+def test_g3(setup):
+    # Half circle counterclockwise
+    test_parse_comments(setup)
+    input = """
+    N20 G02 G03 X5. Y2. I3. J3. F20 
+    """
+    assert setup.block_offsets == {
+        "x" : 2.8,
+        "y": 0.35,
+        "z" : 0
+    }
+
+    assert setup.parse_line(input)
+
+    assert len(setup.lines) == 109
+    assert setup.lines[0] == f"2800 350 1000 1250 10000 {990 + 750} 0"
+    assert setup.lines[-1] == f"{6780+2800} {1074 + 350} 1000 1250 10000 {990 + 750} 0"
+
 def test_g17_g18_g19(setup):
     """
     G17/18/19 - plane select
     """
 
     # G2/G3 G17
+    ## Do nothing
+
+    input = "G17"
+    assert setup.parse_line(input)
+
 
     # G2/G3 G18
+    ## Throw an unimplemented error
+
+    input = "G18"
+
+    found = False  
+    try:
+        setup.parse_line(input)
+    except gcode.NotImplementedException:
+        found = True
+    
+    assert found
 
     # G2/G3 G19
+    ## Throw an unimplemented error
+    input = "G90G19G0"
+
+    found = False  
+    try:
+        setup.parse_line(input)
+    except gcode.NotImplementedException:
+        found = True
+    
+    assert found
 
 def test_g20_21(setup):
     """
     Inches/MM
-    - Doesn't make a difference to me
+    - Doesn't honestly make a difference to me
     """
+
+    assert not setup.inches 
+    assert not setup.mm
+
+    ## Note it in setup
+    lines = "G20"
+    assert setup.parse_line(lines)
+    assert setup.inches
+    assert not setup.mm
+
+    lines = "G21"
+    assert setup.parse_line(lines)
+    assert setup.mm 
+    assert not setup.inches
 
 def test_g28(setup):
     """
@@ -148,6 +225,15 @@ def test_g28(setup):
     """
 
     # TODO FUTURE: Throw a fit if incorrect
+    found = False
+    lines = "G28"
+
+    try:
+        setup.parse_line(lines)
+    except gcode.NotImplementedException:
+        found = True
+    
+    assert found
 
 def test_g40_g41_g42_g43(setup):
     """
@@ -155,42 +241,110 @@ def test_g40_g41_g42_g43(setup):
         - I guess we can ask for D values?
     """
 
+    # Do Nothing for now
+    lines = "G40G90G0"
+    assert setup.parse_line(lines)
+
+    lines = "G41G90G0"
+    assert setup.parse_line(lines)
+
+    lines = "G43G90G0"
+    assert setup.parse_line(lines)
+
+    lines = "G42G90G0"
+    assert setup.parse_line(lines)
+
 def test_g52(setup):
     """
     Temporary workplane offset
     """
+
+    ## Throw an unimplemented
+
+    found = False
+    lines = "G28"
+
+    try:
+        setup.parse_line(lines)
+    except gcode.NotImplementedException:
+        found = True
+    
+    assert found
 
 def test_g80_g81_g82_g83_g88(setup):
     """
     Canned Cycles
         - Basically treat as max depth cut
     """
+    test_parse_comments(setup)
+
+    ## Treat as max Z
+    lines = "G90G1G81G99X10.Y10.Z0.1R5.0F30."
+    assert setup.parse_line(lines)
+    assert setup.lines[-1] == f"{10000 + 2800} {10000 + 350} 100 1250 10000 {990 + 750} 1" 
+
+    lines = "G90G1G83G99X10.Y10.Z0.1R5.0F30."
+    assert setup.parse_line(lines)
+    assert setup.lines[-1] == f"{10000 + 2800} {10000 + 350} 100 1250 10000 {990 + 750} 1" 
 
 def test_g90_g91(setup):
     """
     Absolute or relative
     """
 
+    ## Test G90
+    lines = "G43G91G0X0Y0"
+    assert setup.parse_line(lines)
+
+    ## Test G91 Mode
+    ## Right now throw an Unimplemented exception
+    found = False
+    lines = "G43G91G0X0Y0"
+
+    try:
+        setup.parse_line(lines)
+    except gcode.NotImplementedException:
+        found = True
+    
+    assert found
+
 def test_m6(setup):
     """
     Tool change
+        - All following moves without initialization will have cutting move = 0
     """
+
+    ## I guess we need to load in the new tool data information from comments
 
 def test_m3(setup):
     """
     Spindle On
+        - Without this, cutting move = 0
     """
+    ## Note that spindle is on in the collision detection
 
 def test_m5(setup):
     """
     Spindle Off
         - If we have moves after this below the block Z plane, throw a fit
+        - After this, all cutting moves = 0, until the spindle is turned back on
     """
+    ## Note that the spindle is off in the collision detection
 
 def test_m30(setup):
     """
     Program end
     """
+    lines = """
+    M30
+    G90G0X0Y10Z5
+    G1X10.Y15.
+    """
+
+    assert setup.parse_line(lines)
+    assert setup.lines == []
+
+    ## Exit if we're not done
 
 # Tests writing out the arrays
 def test_output_xyz(setup):
