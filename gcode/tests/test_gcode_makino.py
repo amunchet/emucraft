@@ -12,6 +12,65 @@ import os
 
 import gcode_parser as gcode
 
+# Test the helper function
+def test_codes_parse():
+    """
+    Tests the coding parses
+    """
+    line = """
+    G90G0X1
+    G91 G17 G40 
+    G1 X12. Y13.33 F213M3
+    M3 S2312
+    M5
+    M6T213
+    M3S2343333G40G80
+    m30
+    """
+    x = gcode.codes_parse(line)
+    assert x[0] == [
+        ("G", 90),
+        ("G", 0),
+        ("X",0)
+    ]
+
+    assert x[1] == [
+        ("G", 91),
+        ("G", 17),
+        ("G", 40)
+    ]
+
+    assert x[2] == [
+        ("G", 1),
+        ("X", 12.0),
+        ("Y", 13.33),
+        ("F", 213),
+        ("M", 3)
+    ]
+
+    assert x[3] == [
+        ("M", 3),
+        ("S", 2312)
+    ]
+    assert x[4] == [
+        ("M", 5)
+    ]
+    assert x[5] == [
+        ("M", 6),
+        ("T", 213)
+    ]
+    assert x[6] == [
+        ("M", 3),
+        ("S", 2343333),
+        ("G", 40),
+        ("G", 80)
+    ]
+    assert x[7] == [
+        ("M", 30)
+    ]
+
+
+# Test the Class itself
 @pytest.fixture
 def setup():
     """
@@ -313,23 +372,55 @@ def test_m6(setup):
     Tool change
         - All following moves without initialization will have cutting move = 0
     """
+    test_parse_comments(setup)
+    lines = """
+    G90G0X10Y10
+    """
+    assert setup.parse_line(lines)
 
+    assert setup.lines[-1].split(" ")[-1] == "1"
+
+    lines = """M6T17
+    G90G0X7Y7
+    G90G1X10Y12
+    """
+    assert setup.parse_line(lines)
+    assert setup.lines[-1].split(" ")[-1] == "0"
     ## I guess we need to load in the new tool data information from comments
 
-def test_m3(setup):
+def test_m3_m5(setup):
     """
     Spindle On
         - Without this, cutting move = 0
-    """
-    ## Note that spindle is on in the collision detection
 
-def test_m5(setup):
-    """
     Spindle Off
         - If we have moves after this below the block Z plane, throw a fit
         - After this, all cutting moves = 0, until the spindle is turned back on
+
     """
-    ## Note that the spindle is off in the collision detection
+    test_parse_comments(setup)
+    ## Note that spindle is on in the collision detection
+    lines = """
+    M3
+    G90G0X12Y12
+    """
+    assert setup.parse_line(lines)
+    assert setup.lines[-1].split(" ")[-1] == "0" # Since we're in rapid
+
+    lines = """
+    G90G1X17Y17F17.
+    """
+    assert setup.parse_lines(lines)
+    assert setup.lines[-1].split(" ")[-1] == "1" # Since it's a cutting move
+
+    lines = """M5
+    G90G1X19Y19F23
+    """
+
+    assert setup.parse_lines(lines)
+    assert setup.lines[-1].split(" ")[-1] == "0" # Since spindle is off
+
+
 
 def test_m30(setup):
     """
