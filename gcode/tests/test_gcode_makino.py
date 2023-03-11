@@ -31,7 +31,7 @@ def test_codes_parse():
     assert x[0] == [
         ("G", 90),
         ("G", 0),
-        ("X",0)
+        ("X",1)
     ]
 
     assert x[1] == [
@@ -117,7 +117,7 @@ def test_parse_comments(setup):
     """
     assert setup.parse_line(input)
 
-    assert setup.tool_holder_diameter == 10
+    assert setup.tool_holder_diameter == 10.0
     assert setup.tool_holder_length == 3.9216
     assert setup.tool_diameter == 0.125
     assert setup.tool_length == 0.75
