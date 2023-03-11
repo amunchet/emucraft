@@ -18,7 +18,7 @@ def test_codes_parse():
     Tests the coding parses
     """
     line = """
-    G90G0X1
+    G90G0X-1
     G91 G17 G40 
     G1 X12. Y13.33 F213M3
     M3 S2312
@@ -31,7 +31,7 @@ def test_codes_parse():
     assert x[0] == [
         ("G", 90),
         ("G", 0),
-        ("X",1)
+        ("X",-1)
     ]
 
     assert x[1] == [
