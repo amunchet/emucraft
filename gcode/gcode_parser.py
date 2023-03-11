@@ -69,6 +69,8 @@ class Program:
         self.block_z_min = None
         self.block_z_max = None
 
+        self.lines = []
+
     def helper_block(self):
         """
         Turns Block Values into one data structure for ease of use
