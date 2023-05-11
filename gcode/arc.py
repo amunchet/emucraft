@@ -140,7 +140,7 @@ def segment(start, end, ijk, min_distance=1, g2=True, g3=False):
         return [x for x in seq if not (x in seen or seen_add(x))]   
 
     if g2:
-        return reversed(f7(points))
+        return list(reversed(f7(points)))
 
     return f7(points)
 
