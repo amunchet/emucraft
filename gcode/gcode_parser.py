@@ -70,6 +70,21 @@ class Program:
         self.block_z_max = None
 
         self.lines = []
+        self.current = {
+            "G" : [],
+            "M" : [],
+            "X" : None,
+            "Y" : None,
+            "Z" : None,
+            "H" : None,
+            "I" : None,
+            "J": None,
+            "K" : None,
+            "F" : None,
+            "S" : None,
+            "D" : None,
+            "T" : None
+        }
 
     def helper_block(self):
         """
@@ -95,6 +110,9 @@ class Program:
         Parses Lines
         """
         logger.debug(f"Lines:{lines}")
+
+        
+
         # Check if the right types, if not, send through codes_parse
         # If that fails, throw an error
 
@@ -116,6 +134,32 @@ class Program:
 
 
         }
+        
+        for item in self.current:
+            
+            if item != "G" and item != "M":
+                # Clear the non-G or M-code current
+                self.current[item] = None
+            
+                # Update Matches with codes
+                matches [item + "{}"] = (item, True)
+            else:
+                matches[item + "{}"] = (item, False)
+
+            
+
+
+
+        # Create first line if it doesn't exist, starting point
+        if not self.lines:
+            try:
+                self.lines.append(
+                    f"{int(self.starting_point[0] * 1000)} {int(self.starting_point[1] * 1000)} {int(self.starting_point[2] * 1000)} {int(self.tool_diameter * 1000)} {int(self.tool_holder_diameter * 1000)} {int((self.starting_point[2] + self.tool_length) * 1000)} 0"
+                )
+            except TypeError:
+                # Values not found yet
+                pass
+
 
         for line in [x.strip() for x in lines.split("\n") if x.strip() != ""]:
             logger.debug(f"Line:{line}")
@@ -129,12 +173,22 @@ class Program:
                         output = float(x.group(1))
                     except Exception:
                         output = x.group(1)
-
-                    setattr(self, matches[match], output)
+                    if(type(matches[match]) is str):
+                        setattr(self, matches[match], output)
+                    else:
+                        if matches[match][1]:
+                            self.current[matches[match][0]] = output
+                        else:
+                            self.current[matches[match][0]].append(output) # TODO: I know this doesn't take into account cancelling out G and M Codes
+            
+            logger.debug(f"Current: {self.current}")
         
         # Run all helper functions
 
         for item in [x for x in dir(self) if x.startswith("helper_")]:
             getattr(self, item)()
+    
+        # Run Motion parsing function
+
         
         return True
