@@ -8,13 +8,22 @@ import time
 # z = np.full((10000,10000), 1000)
 
 # Values of > 1000 seem to do very bad things - we probably want to scale our output down by 10
-z = np.zeros((500,500))
+
+dim_x = 5000
+dim_y = 5000
+
+z = np.zeros((dim_x,dim_y))
+
 with open("toy-final.block", "r") as f:
     for x, line in enumerate(f.readlines()):
         for y, item in enumerate(line.split(" ")):
             if item != "\n" and item != "":
-                if x < 500 and y < 500:
-                    z[x,y] = int(item)
+                z[x,y] = int(item)
+
+
+# Downsample the array
+reshaped = z.reshape(1000, int(dim_x / 1000), 1000, int(dim_y / 1000))
+z = np.min(reshaped, axis=(1,3))
 
 # Create a mesh object
 mesh = o3d.geometry.TriangleMesh()
@@ -66,6 +75,5 @@ for i in range(0,1000):
     
 
 
-
 # Run the visualizer
-vis.destroy_window()
+# vis.destroy_window()
