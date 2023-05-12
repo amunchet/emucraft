@@ -6,6 +6,8 @@ import time
 # Generate a 1000x1000 array of initial z values
 # z = np.random.rand(1000, 1000)
 # z = np.full((10000,10000), 1000)
+
+# Values of > 1000 seem to do very bad things - we probably want to scale our output down by 10
 z = np.zeros((500,500))
 with open("toy-final.block", "r") as f:
     for x, line in enumerate(f.readlines()):
