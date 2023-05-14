@@ -2,6 +2,7 @@ import numpy as np
 import open3d as o3d
 import threading
 import time
+import os
 
 # Generate a 1000x1000 array of initial z values
 # z = np.random.rand(1000, 1000)
@@ -58,8 +59,24 @@ vis.add_geometry(mesh)
 # Define a function to update the mesh on each iteration
 
 # Increase the values between [100, 100] and [200, 200] by 1
+
+def reduce_z_values(array, center, diameter, offset):
+    x_center, y_center = center
+    radius = diameter / 2
+
+    x_indices, y_indices = np.indices(array.shape)
+    distances = np.sqrt((x_indices - x_center)**2 + (y_indices - y_center)**2)
+
+    mask = distances <= radius
+    array[mask] = np.minimum(array[mask], offset)
+
+
+if not os.path.exists("images"):
+    os.mkdir("images")
+
 for i in range(0,1000):
-    z[100:201, 100:201] -= 1
+    # z[100:201, 100:201] -= 1
+    reduce_z_values(z, (100+i,100+i), 75, -10)
 
     # Update the vertices of the mesh
     vertices = np.column_stack([xx.ravel(), yy.ravel(), z.ravel()])
@@ -71,9 +88,8 @@ for i in range(0,1000):
     vis.poll_events()
     vis.update_renderer()
 
-    # Wait for 1 second before updating the mesh again
-    
-
+    fname = os.path.join("images", f"step_{i}.png")
+    image = vis.capture_screen_image(filename=fname, do_render=True)
 
 # Run the visualizer
-# vis.destroy_window()
+vis.destroy_window()
