@@ -18,6 +18,9 @@ Key improvements over Emu:
 - Full tests and coverage
 - Easy API
 
+## KNOWN ISSUES
+- Helical interpolation is lazy - we need to ensure it checks at the lowest Z value (i.e., the destination) and not anywhere else.  Right now, the helical interpolation is only being applied in X and Y.  This shouldn't matter for normal 3 axis verifications, but it's worth noting.
+
 ## Roadmap
 1.  [COMPLETE] Get the kernel working.  Be able to simulate cuts and block state.
 2.  Translate G-code to `XYZ format` and simulate physical part being machined
