@@ -91,7 +91,20 @@ class Program:
     def motion_parse(line):
         """
         Parses and returns output from line
+            - Note: This is a single line
         """
+
+        # Check for invalid G codes or M-codes (not implemented)
+
+        # Make sure we're in G90 mode
+
+        # Check our feed rate and if we're a rapid move
+
+        # Check if we're linear or circular
+
+        # Interpolate
+
+        # Add to lines (make sure we use Z heights)
 
 
     def helper_block(self):
