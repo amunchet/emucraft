@@ -22,6 +22,21 @@ def setup():
 
     # TODO: Set up the current positions in the class
 
+    a.current = {
+        "G" : ["90", "0"],
+        "M" : [],
+        "X": "0",
+        "Y" : "0",
+        "Z" : "10",
+        "H" : "1",
+        "I" : None,
+        "J" : None,
+        "K" : None,
+        "F" : 100,
+        "S": 10000,
+        "D" : None,
+        "T" : 6
+    }
     yield a
 
     return "Done"
@@ -34,10 +49,21 @@ def test_line_parse_linear_move_cutting(setup):
     Linear move - cutting
     """
 
+    lines = """
+    G90 G1 Z4. F30.
+    X10. Y10. F40.
+    """
+    
+    minimum_step = 0.1
+
 
     # TODO: Feed in the G-code line - linearization will be created relative to current position
+    setup.parse_line(lines, minimum_step=0.1)
 
     # TODO: Return the expected lines
+    assert setup.lines == [
+
+    ]
 
 
     # TODO: Test each axis independently, then all together
