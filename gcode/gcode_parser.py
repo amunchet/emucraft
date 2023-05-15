@@ -43,6 +43,9 @@ def codes_parse(gcode):
     logger.debug(f"Codes:{codes}")
     return codes
 
+
+
+
 class Program:
     def __init__(self):
         """
@@ -85,6 +88,11 @@ class Program:
             "D" : None,
             "T" : None
         }
+    def motion_parse(line):
+        """
+        Parses and returns output from line
+        """
+
 
     def helper_block(self):
         """
@@ -105,7 +113,7 @@ class Program:
             "z" : 0
         }
 
-    def parse_line(self, lines):
+    def parse_line(self, lines, minimum_step = 0.001):
         """
         Parses Lines
         """
@@ -164,6 +172,12 @@ class Program:
         for line in [x.strip() for x in lines.split("\n") if x.strip() != ""]:
             logger.debug(f"Line:{line}")
 
+
+            # Run Motion parsing function
+            self.motion_parse_line(line)
+
+
+            # Update the Current status
             for match in matches:
                 x = re.search(match.format(number_match), line)
                 if x is not None:
@@ -188,7 +202,6 @@ class Program:
         for item in [x for x in dir(self) if x.startswith("helper_")]:
             getattr(self, item)()
     
-        # Run Motion parsing function
 
         
         return True
