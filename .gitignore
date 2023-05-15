@@ -4,3 +4,4 @@ __pycache__
 a.out
 *.block
 venv-old/**
+images/**
