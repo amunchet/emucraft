@@ -321,7 +321,7 @@ def test_g52(setup):
     ## Throw an unimplemented
 
     found = False
-    lines = "G28"
+    lines = "G52"
 
     try:
         setup.parse_line(lines)
