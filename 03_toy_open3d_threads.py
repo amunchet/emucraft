@@ -42,6 +42,7 @@ def reduce_z_values(array, center, diameter, offset):
 
 
 paused = False
+speed = 10
 
 def main():
 
@@ -58,11 +59,20 @@ def main():
     def keypress_callback(key_event):
         # Handle keypress event
         global paused
+        global speed
+
         key = key_event.key
         if key == ord('q') or key == ord('Q'):
             gui.Application.instance.quit()
+        elif key == ord('p') or key == ord('P'):
+            paused = True
         elif key == ord(' '):
-            paused = not paused # TODO: This is buggy - bounces due to not locking between the threads
+            paused = False
+        elif key == ord("f") or key == ord("F"):
+            speed = speed * 2
+        
+        elif key == ord("d") or key == ord("D"):
+            speed = speed / 2 if speed > 2 else 1
         return True
 
     widget.set_on_key(keypress_callback)
@@ -116,6 +126,8 @@ def main():
         # while True:
         i = 0
         global paused
+        global speed
+
         while i < 1000:
             if(not paused):
                 # Deform mesh vertices
@@ -124,16 +136,16 @@ def main():
                 # vert = mesh.vertices + np.sin(i)*0.02
                 # mesh.vertices = o3d.utility.Vector3dVector(vert)
                 # i += 1
+                if (i % speed == 0):
+                    vertices = np.column_stack([xx.ravel(), yy.ravel(), z.ravel()])
+                    mesh.vertices = o3d.utility.Vector3dVector(vertices)
+                    mesh.compute_vertex_normals()
 
-                vertices = np.column_stack([xx.ravel(), yy.ravel(), z.ravel()])
-                mesh.vertices = o3d.utility.Vector3dVector(vertices)
-                mesh.compute_vertex_normals()
 
+                    # Update geometry
+                    gui.Application.instance.post_to_main_thread(window, update_geometry)            
 
-                # Update geometry
-                gui.Application.instance.post_to_main_thread(window, update_geometry)            
-
-                time.sleep(0.05)
+                    time.sleep(0.05)
                 # if i[0,0]>100:
                 #    break
 
