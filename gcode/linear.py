@@ -7,7 +7,7 @@ import numpy as np
 ChatGPT: generate a python function that accepts the starting point (x,y,z), the ending point (x,y,z) and the step amount and generates a list of points going from starting to ending with step value of the step amount
 """
 
-def generate_points(start, end, step_size):
+def generate_points(start, end, step_size=1):
     distance = np.linalg.norm(np.array(end) - np.array(start))
     num_steps = int(np.ceil(distance / step_size))
 
