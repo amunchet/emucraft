@@ -244,6 +244,19 @@ class Program:
         }
 
         # TODO: These need to be put back in
+        # Update the Current status
+        for match in matches:
+            x = re.search(match.format(number_match), line)
+            if x is not None:
+                logger.warning(x.group(1))
+
+                try:
+                    output = float(x.group(1))
+                except Exception:
+                    output = x.group(1)
+                
+                setattr(self, matches[match], output)
+            
 
         # Create first line if it doesn't exist, starting point
         if not self.lines:
