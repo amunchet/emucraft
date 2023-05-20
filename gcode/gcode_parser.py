@@ -47,10 +47,6 @@ def codes_parse(gcode):
 
     logger.debug(f"Codes:{codes}")
     return codes
-
-
-
-
 class Program:
     def __init__(self):
         """
@@ -97,8 +93,8 @@ class Program:
         self.invalid_gcodes = [
             91, 18, 19, 28, 52
         ]
-
-        self.motion_code = 0 # Can be 0, 1, 2, or 3
+        self.rapid_code = 0 # Can be 0 or 1
+        self.rotation_code = 0 # Can be 0, 2, or 3
         self.coordinate_code = 17 # Can be 17, 18, 19
         self.units_code = 20 # Can be 20 or 21
         self.offset_code = 40 # Can be 40, 41, 42, 43
@@ -106,11 +102,29 @@ class Program:
         self.relative_code = 90 # Can be 90, 91
         self.spindle_code = None # Can be 3 or 5
 
-        
-    def motion_parse(self, line, current_codes):
+    def translate_to_xyz(self, arr, MULTIPLIER=1000):
+        """
+        Translates to the XYZ format from the array of points
+
+        arr - [(x1,y1,z1), (x2, y2, z2), ...]
+
+        Output XYZ file format (from `functions.h`)
+            [X] [Y] [Z] [Cutter Diameter] [Tool Holder Diameter] [Tool Holder Z (Bottom)] [MOVE TYPE - 0: non-cutting , 1: normal]
+            XXXXX XXXXX XXXXX XXXXXX XXXXX XXXXX XXXXX
+        """
+        output = []
+        cutting = 0 if self.rapid_code == 0 else 1
+        for (x,y,z) in arr:
+            output.append(f"{int(x)} {int(y)} {int(z)} {int(self.tool_diameter * MULTIPLIER)} {int(self.tool_holder_diameter * MULTIPLIER)} {int(self.tool_holder_length * MULTIPLIER)} {cutting}")
+
+        return output
+
+    def motion_parse(self, line, current_codes, MULTIPLIER=1000):
         """
         Parses and returns output from line
             - Note: This is a single line
+        
+            MULTIPLIER is the conversion factor for XYZ format (probably 1000)
         """
 
         # Check for invalid G codes or M-codes (not implemented)
@@ -123,15 +137,15 @@ class Program:
         
         # Check if we're linear or circular
         
-
+        rotation_code = 0
         if ("G", 1) in current_codes:
-            self.motion_code = 1
+            self.rapid_code = 1
         elif ("G", 0) in current_codes:
-            self.motion_code = 0
+            self.rapid_code = 0
         elif ("G", 2) in current_codes:
-            self.motion_code = 2   
+            rotation_code = 2   
         elif ("G", 3) in current_codes:
-            self.motion_code = 3 
+            rotation_code = 3 
 
         end_x = self.current["X"]
         end_y = self.current["Y"]
@@ -161,14 +175,23 @@ class Program:
         # Interpolate
         logger.debug(f"[motion_parse] Current: {self.current}")
 
-        if self.motion_code < 2:
-            retval = linear.generate_points((self.current["X"], self.current["Y"], self.current["Z"]), (end_x, end_y, end_z))
+        if rotation_code < 2:
+            retval = linear.generate_points(
+                (int(self.current["X"] * MULTIPLIER), int(self.current["Y"] * MULTIPLIER), int(self.current["Z"] * MULTIPLIER)), 
+                (int(end_x * MULTIPLIER), int(end_y * MULTIPLIER), int(end_z * MULTIPLIER)))
         else:
-            ijk = (i,j,k)
-            retval = arc.segment((self.current["X"], self.current["Y"], self.current["Z"]), (end_x, end_y, end_z), ijk, g2 = self.motion_code == 2, g3 = self.motion_code == 3)
+            ijk = (int(i * MULTIPLIER),int(j * MULTIPLIER),int(k * MULTIPLIER))
+            retval = arc.segment(
+                (int(self.current["X"] * MULTIPLIER), int(self.current["Y"] * MULTIPLIER), int(self.current["Z"] * MULTIPLIER)), 
+                (int(end_x * MULTIPLIER), int(end_y * MULTIPLIER), int(end_z * MULTIPLIER)), 
+                ijk, 
+                g2 = rotation_code == 2, 
+                g3 = rotation_code == 3)
+
+        # Translate into XYZ format
+        retval = self.translate_to_xyz(retval)
 
         # Add to lines (make sure we use Z heights)
-        logger.info(f"CURRENT lines: {self.lines}")
         if retval:
             self.lines.append(retval)
 
@@ -218,9 +241,9 @@ class Program:
 
             r"MIN\s*Z\s*:\s*{}" : "block_z_min",
             r"MAX\s*Z\s*:\s*{}" : "block_z_max",
-
-
         }
+
+        # TODO: These need to be put back in
 
         # Create first line if it doesn't exist, starting point
         if not self.lines:
@@ -255,7 +278,5 @@ class Program:
 
         for item in [x for x in dir(self) if x.startswith("helper_")]:
             getattr(self, item)()
-    
-
         
         return True
