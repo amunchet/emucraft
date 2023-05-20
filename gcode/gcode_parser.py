@@ -3,11 +3,16 @@
 G-code parser
 """
 import re
+
+import arc
+import linear
+
 from gcode_logger import logger
 
 # Exceptions
 class NotImplementedException(Exception):
     pass
+
 
 # Helpers
 def codes_parse(gcode):
@@ -63,22 +68,22 @@ class Program:
 
         self.starting_point = (0,0,10) # Default
 
-        self.block_x_min = None
-        self.block_x_max = None
+        self.block_x_min = 0
+        self.block_x_max = 0
 
-        self.block_y_min = None
-        self.block_y_max = None
+        self.block_y_min = 0
+        self.block_y_max = 0
 
-        self.block_z_min = None
-        self.block_z_max = None
+        self.block_z_min = 0
+        self.block_z_max = 0
 
         self.lines = []
         self.current = {
             "G" : [],
             "M" : [],
-            "X" : None,
-            "Y" : None,
-            "Z" : None,
+            "X" : self.starting_point[0],
+            "Y" : self.starting_point[1],
+            "Z" : self.starting_point[2],
             "H" : None,
             "I" : None,
             "J": None,
@@ -88,23 +93,84 @@ class Program:
             "D" : None,
             "T" : None
         }
-    def motion_parse(line):
+
+        self.invalid_gcodes = [
+            91, 18, 19, 28, 52
+        ]
+
+        self.motion_code = 0 # Can be 0, 1, 2, or 3
+        self.coordinate_code = 17 # Can be 17, 18, 19
+        self.units_code = 20 # Can be 20 or 21
+        self.offset_code = 40 # Can be 40, 41, 42, 43
+        self.canned_cycle_code = None # Can be 80, 81, 82, 83, 88
+        self.relative_code = 90 # Can be 90, 91
+        self.spindle_code = None # Can be 3 or 5
+
+        
+    def motion_parse(self, line, current_codes):
         """
         Parses and returns output from line
             - Note: This is a single line
         """
 
         # Check for invalid G codes or M-codes (not implemented)
-
-        # Make sure we're in G90 mode
-
+        for item in self.invalid_gcodes:
+            if f"G{item}" in line:
+                raise NotImplementedException("Invalid G-code")
+        
         # Check our feed rate and if we're a rapid move
-
+        # TODO: if we have a rapid fly move (F750.) and it cuts something, we should throw a fit
+        
         # Check if we're linear or circular
+        
+
+        if ("G", 1) in current_codes:
+            self.motion_code = 1
+        elif ("G", 0) in current_codes:
+            self.motion_code = 0
+        elif ("G", 2) in current_codes:
+            self.motion_code = 2   
+        elif ("G", 3) in current_codes:
+            self.motion_code = 3 
+
+        end_x = self.current["X"]
+        end_y = self.current["Y"]
+        end_z = self.current["Z"]
+
+        i = 0
+        j = 0
+        k = 0
+
+        logger.debug(f"[motion_parse] current_codes: {current_codes}")
+
+        for (code, val) in current_codes:
+            if code == "X":
+                end_x = val
+            if code == "Y":
+                end_y = val
+            if code == "Z":
+                end_z = val
+            
+            if code == "I":
+                i = val
+            if code == "J":
+                j = val
+            if code == "K":
+                k = val
 
         # Interpolate
+        logger.debug(f"[motion_parse] Current: {self.current}")
+
+        if self.motion_code < 2:
+            retval = linear.generate_points((self.current["X"], self.current["Y"], self.current["Z"]), (end_x, end_y, end_z))
+        else:
+            ijk = (i,j,k)
+            retval = arc.segment((self.current["X"], self.current["Y"], self.current["Z"]), (end_x, end_y, end_z), ijk, g2 = self.motion_code == 2, g3 = self.motion_code == 3)
 
         # Add to lines (make sure we use Z heights)
+        logger.info(f"CURRENT lines: {self.lines}")
+        if retval:
+            self.lines.append(retval)
 
 
     def helper_block(self):
@@ -155,21 +221,6 @@ class Program:
 
 
         }
-        
-        for item in self.current:
-            
-            if item != "G" and item != "M":
-                # Clear the non-G or M-code current
-                self.current[item] = None
-            
-                # Update Matches with codes
-                matches [item + "{}"] = (item, True)
-            else:
-                matches[item + "{}"] = (item, False)
-
-            
-
-
 
         # Create first line if it doesn't exist, starting point
         if not self.lines:
@@ -180,35 +231,25 @@ class Program:
             except TypeError:
                 # Values not found yet
                 pass
-
+        
 
         for line in [x.strip() for x in lines.split("\n") if x.strip() != ""]:
             logger.debug(f"Line:{line}")
 
+            # Get the current codes 
+            current_codes = codes_parse(line)[0]
 
             # Run Motion parsing function
-            self.motion_parse_line(line)
+            self.motion_parse(line, current_codes)
 
+            # Update the current set
+            for (code, val) in current_codes:
+                if code in "GM":
+                    self.current[code].append(int(val))
+                else:
+                    self.current[code] = float(val)
 
-            # Update the Current status
-            for match in matches:
-                x = re.search(match.format(number_match), line)
-                if x is not None:
-                    logger.warning(x.group(1))
-
-                    try:
-                        output = float(x.group(1))
-                    except Exception:
-                        output = x.group(1)
-                    if(type(matches[match]) is str):
-                        setattr(self, matches[match], output)
-                    else:
-                        if matches[match][1]:
-                            self.current[matches[match][0]] = output
-                        else:
-                            self.current[matches[match][0]].append(output) # TODO: I know this doesn't take into account cancelling out G and M Codes
-            
-            logger.debug(f"Current: {self.current}")
+        
         
         # Run all helper functions
 

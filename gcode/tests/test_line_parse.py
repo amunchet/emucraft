@@ -23,12 +23,12 @@ def setup():
     # TODO: Set up the current positions in the class
 
     a.current = {
-        "G" : ["90", "0"],
+        "G" : [90, 0],
         "M" : [],
-        "X": "0",
-        "Y" : "0",
-        "Z" : "10",
-        "H" : "1",
+        "X": 0,
+        "Y" : 0,
+        "Z" : 10,
+        "H" : 1,
         "I" : None,
         "J" : None,
         "K" : None,
@@ -61,6 +61,7 @@ def test_line_parse_linear_move_cutting(setup):
     setup.parse_line(lines, minimum_step=0.1)
 
     # TODO: Return the expected lines
+    assert len(setup.lines) == 2
     assert setup.lines == [
 
     ]
