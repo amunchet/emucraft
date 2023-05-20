@@ -39,6 +39,10 @@ def reduce_z_values(array, center, diameter, offset):
     mask = distances <= radius
     array[mask] = np.minimum(array[mask], offset)
 
+
+
+paused = False
+
 def main():
 
 
@@ -51,12 +55,15 @@ def main():
     widget = gui.SceneWidget()
     widget.scene = rendering.Open3DScene(window.renderer)
     window.add_child(widget)    
-
     def keypress_callback(key_event):
         # Handle keypress event
+        global paused
         key = key_event.key
         if key == ord('q') or key == ord('Q'):
             gui.Application.instance.quit()
+        elif key == ord(' '):
+            paused = not paused # TODO: This is buggy - bounces due to not locking between the threads
+        return True
 
     widget.set_on_key(keypress_callback)
 
@@ -99,8 +106,6 @@ def main():
     widget.scene.add_geometry('mesh', mesh, mat)
 
 
-   
-
     def update_geometry():
         widget.scene.clear_geometry()
         widget.scene.add_geometry('frame', frame, mat)
@@ -109,25 +114,30 @@ def main():
     def thread_main():
         # i = np.tile(np.arange(len(mesh.vertices)),(3,1)).T # (8,3)
         # while True:
-        for i in range(0,1000):
-            # Deform mesh vertices
-            reduce_z_values(z, (100+i, 100+i), 75, -10)
+        i = 0
+        global paused
+        while i < 1000:
+            if(not paused):
+                # Deform mesh vertices
+                reduce_z_values(z, (100+i, 100+i), 75, -10)
 
-            # vert = mesh.vertices + np.sin(i)*0.02
-            # mesh.vertices = o3d.utility.Vector3dVector(vert)
-            # i += 1
+                # vert = mesh.vertices + np.sin(i)*0.02
+                # mesh.vertices = o3d.utility.Vector3dVector(vert)
+                # i += 1
 
-            vertices = np.column_stack([xx.ravel(), yy.ravel(), z.ravel()])
-            mesh.vertices = o3d.utility.Vector3dVector(vertices)
-            mesh.compute_vertex_normals()
+                vertices = np.column_stack([xx.ravel(), yy.ravel(), z.ravel()])
+                mesh.vertices = o3d.utility.Vector3dVector(vertices)
+                mesh.compute_vertex_normals()
 
 
-            # Update geometry
-            gui.Application.instance.post_to_main_thread(window, update_geometry)            
+                # Update geometry
+                gui.Application.instance.post_to_main_thread(window, update_geometry)            
 
-            time.sleep(0.05)
-            # if i[0,0]>100:
-            #    break
+                time.sleep(0.05)
+                # if i[0,0]>100:
+                #    break
+
+                i+=1
 
     threading.Thread(target=thread_main).start()
 
