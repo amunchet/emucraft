@@ -78,18 +78,19 @@ for i in range(0,1000):
     # z[100:201, 100:201] -= 1
     reduce_z_values(z, (100+i,100+i), 75, -10)
 
-    # Update the vertices of the mesh
-    vertices = np.column_stack([xx.ravel(), yy.ravel(), z.ravel()])
-    mesh.vertices = o3d.utility.Vector3dVector(vertices)
-    mesh.compute_vertex_normals()
+    if i % 10 == 0:
+        # Update the vertices of the mesh
+        vertices = np.column_stack([xx.ravel(), yy.ravel(), z.ravel()])
+        mesh.vertices = o3d.utility.Vector3dVector(vertices)
+        mesh.compute_vertex_normals()
 
-    # Remove the old mesh and add the updated mesh to the visualizer
-    vis.update_geometry(mesh)
-    vis.poll_events()
-    vis.update_renderer()
+        # Remove the old mesh and add the updated mesh to the visualizer
+        vis.update_geometry(mesh)
+        vis.poll_events()
+        vis.update_renderer()
 
-    fname = os.path.join("images", f"step_{i}.png")
-    image = vis.capture_screen_image(filename=fname, do_render=True)
+        fname = os.path.join("images", f"step_{i}.png")
+        image = vis.capture_screen_image(filename=fname, do_render=True)
 
 # Run the visualizer
 vis.destroy_window()
