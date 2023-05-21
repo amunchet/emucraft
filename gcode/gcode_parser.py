@@ -54,10 +54,10 @@ class Program:
         """
         lines = []
 
-        self.tool_holder_diameter = None
-        self.tool_holder_length = None
-        self.tool_diameter = None
-        self.tool_length = None
+        self.tool_holder_diameter = 0
+        self.tool_holder_length = 0
+        self.tool_diameter = 0
+        self.tool_length = 0
 
         self.block = None
         self.block_offsets = None
@@ -243,21 +243,7 @@ class Program:
             r"MAX\s*Z\s*:\s*{}" : "block_z_max",
         }
 
-        # TODO: These need to be put back in
-        # Update the Current status
-        for match in matches:
-            x = re.search(match.format(number_match), line)
-            if x is not None:
-                logger.warning(x.group(1))
-
-                try:
-                    output = float(x.group(1))
-                except Exception:
-                    output = x.group(1)
-                
-                setattr(self, matches[match], output)
-            
-
+        
         # Create first line if it doesn't exist, starting point
         if not self.lines:
             try:
@@ -271,6 +257,21 @@ class Program:
 
         for line in [x.strip() for x in lines.split("\n") if x.strip() != ""]:
             logger.debug(f"Line:{line}")
+
+
+            # Update the Current matches
+            for match in matches:
+                x = re.search(match.format(number_match), line)
+                if x is not None:
+                    logger.warning(x.group(1))
+
+                    try:
+                        output = float(x.group(1))
+                    except Exception:
+                        output = x.group(1)
+                    
+                    setattr(self, matches[match], output)
+        
 
             # Get the current codes 
             current_codes = codes_parse(line)[0]

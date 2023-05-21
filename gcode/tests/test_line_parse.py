@@ -21,7 +21,7 @@ def setup():
     """
     a = gcode.Program()
 
-    # TODO: Set up the current positions in the class
+    # Set up the current positions in the class
 
     a.tool_diameter = 0.5
     a.tool_holder_length = 3.0
