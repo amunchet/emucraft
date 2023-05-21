@@ -14,7 +14,7 @@ if level == "DEBUG":
 else:
     level = logging.WARNING
 """
-level = logging.DEBUG
+level = logging.WARNING
 
 
 logger = logging.getLogger("gcode_logger")

@@ -145,13 +145,15 @@ def test_g0_g1(setup):
     """
     Tests G0 (Rapid)
         - Want optimized for above block height
+    
+    NOTE: We are not implementing G91 at this time
     """
     # Unoptimized - rapid below 1.0
     test_parse_comments(setup)
 
     input = """
     N10 G90 G00 X10. Y10. Z0.99
-    N20 G91 G01 X1. Y1. Z0
+    N20 G90 G01 X11. Y11. Z0
     N25 G90 G01 X13. Y13. Z1.0
     N30 
     """

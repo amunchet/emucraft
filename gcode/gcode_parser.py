@@ -263,7 +263,7 @@ class Program:
             for match in matches:
                 x = re.search(match.format(number_match), line)
                 if x is not None:
-                    logger.warning(x.group(1))
+                    logger.info(x.group(1))
 
                     try:
                         output = float(x.group(1))
