@@ -241,19 +241,9 @@ class Program:
 
             r"MIN\s*Z\s*:\s*{}" : "block_z_min",
             r"MAX\s*Z\s*:\s*{}" : "block_z_max",
-        }
+        }        
 
-        
-        # Create first line if it doesn't exist, starting point
-        if not self.lines:
-            try:
-                self.lines.append(
-                    f"{int(self.starting_point[0] * 1000)} {int(self.starting_point[1] * 1000)} {int(self.starting_point[2] * 1000)} {int(self.tool_diameter * 1000)} {int(self.tool_holder_diameter * 1000)} {int((self.starting_point[2] + self.tool_length) * 1000)} 0"
-                )
-            except TypeError:
-                # Values not found yet
-                pass
-        
+        # TODO: We might have to put the first point back in
 
         for line in [x.strip() for x in lines.split("\n") if x.strip() != ""]:
             logger.debug(f"Line:{line}")
