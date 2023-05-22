@@ -93,7 +93,7 @@ def test_line_parse_circular_move_ccw(setup):
     """
     setup.parse_line(lines, minimum_step=0.1)
 
-    # TODO: Return the expected lines
+    #  Return the expected lines
     assert len(setup.lines) == 5
 
     assert setup.lines[1][0] == "-9 9 1100 500 5000 3000 1" # The -9 seems to be a rounding error
@@ -111,8 +111,49 @@ def test_line_parse_circular_move_ccw(setup):
 
 
 def test_line_parse_circular_move_cw(setup):
-    assert False
+    lines = """
+    G90 G1 Z1.1 F30.
+    G03 X2.0 Y1.0 I1.0 J0.0 
+    G0 Z1.5
+    G0 X3.0 Y1.0 
+    G1 Z1.1
+    G03 X3.0 Y2.0 I0.0 J1.0 
+    """
+    setup.parse_line(lines, minimum_step = 0.1)
+
+    assert len(setup.lines) == 6
+
+    assert setup.lines[0][0] == "0 0 10000 500 5000 3000 1" # Starting position
+    assert setup.lines[0][-1] == "0 0 1100 500 5000 3000 1" # Ending spot
+
+    assert setup.lines[1][0] == "0 0 1100 500 5000 3000 1" # Picked up from last spot
+    assert setup.lines[1][-1] == "1719 695 1100 500 5000 3000 1" # This is rounding issue with G03
+
+    # Rapid moves
+
+    assert setup.lines[2][0] == "2000 1000 1100 500 5000 3000 0" # TODO: We might have to fix this, since it tries to start where it thinks it should be
+    assert setup.lines[2][-1] == "2000 1000 1500 500 5000 3000 0"
+
+
+    assert setup.lines[3][0] == "2000 1000 1500 500 5000 3000 0"
+    assert setup.lines[3][-1] == "3000 1000 1500 500 5000 3000 0"
+
+    assert setup.lines[4][0] == "3000 1000 1500 500 5000 3000 1"
+    assert setup.lines[4][-1] == "3000 1000 1100 500 5000 3000 1"
+
+    assert setup.lines[5][0] == "3000 1000 1100 500 5000 3000 1"
+    assert setup.lines[5][-1] == "4000 1983 1100 500 5000 3000 1" # Rounding offset problem
 
 
 def test_line_parse_canned_cycles(setup):
+    lines = """
+    G90 G0 X1. Y1.
+    G81 G98 Z2. F200.
+    X2.
+    Y2.
+    """
+    setup.parse_line(lines, minimum_step = 0.1)
+    assert len(setup.lines) == 4
+
+    print(setup.lines[1])
     assert False

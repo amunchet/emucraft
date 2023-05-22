@@ -265,9 +265,19 @@ class Program:
 
             # Get the current codes 
             current_codes = codes_parse(line)[0]
-
+            logger.error(current_codes)
             # Run Motion parsing function
+
+            # Fix for Canned Cycles
+            temp_g1 = False
+            if (('G', 81) in current_codes or ('G', 82) in current_codes or ('G', 83) in current_codes) and ("G", 1) not in current_codes:
+                current_codes.append(("G", 1))
+                temp_g1 = True
+
             self.motion_parse(line, current_codes)
+
+            if temp_g1:
+                current_codes = [x for x in current_codes if x != ("G", 1)]
 
             # Update the current set
             for (code, val) in current_codes:
