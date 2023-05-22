@@ -98,7 +98,7 @@ class Program:
         self.coordinate_code = 17 # Can be 17, 18, 19
         self.units_code = 20 # Can be 20 or 21
         self.offset_code = 40 # Can be 40, 41, 42, 43
-        self.canned_cycle_code = None # Can be 80, 81, 82, 83, 88
+        self.canned_cycle_code = 80 # Can be 80, 81, 82, 83, 88
         self.relative_code = 90 # Can be 90, 91
         self.spindle_code = None # Can be 3 or 5
 
@@ -146,6 +146,15 @@ class Program:
             rotation_code = 2   
         elif ("G", 3) in current_codes:
             rotation_code = 3 
+        
+        if ("G", 80) in current_codes:
+            self.canned_cycle_code = 80
+        elif ("G", 81) in current_codes:
+            self.canned_cycle_code = 81
+        elif ("G", 82) in current_codes:
+            self.canned_cycle_code = 82
+        elif ("G", 83) in current_codes:
+            self.canned_cycle_code = 83
 
         end_x = self.current["X"]
         end_y = self.current["Y"]
@@ -175,7 +184,9 @@ class Program:
         # Interpolate
         logger.debug(f"[motion_parse] Current: {self.current}")
 
-        if rotation_code < 2:
+        if self.canned_cycle_code > 80:
+            retval = [(end_x * MULTIPLIER, end_y *MULTIPLIER, end_z * MULTIPLIER)]
+        elif rotation_code < 2:
             retval = linear.generate_points(
                 (int(self.current["X"] * MULTIPLIER), int(self.current["Y"] * MULTIPLIER), int(self.current["Z"] * MULTIPLIER)), 
                 (int(end_x * MULTIPLIER), int(end_y * MULTIPLIER), int(end_z * MULTIPLIER)))

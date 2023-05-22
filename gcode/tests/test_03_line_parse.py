@@ -155,5 +155,8 @@ def test_line_parse_canned_cycles(setup):
     setup.parse_line(lines, minimum_step = 0.1)
     assert len(setup.lines) == 4
 
-    print(setup.lines[1])
-    assert False
+    assert setup.lines[1:4] == [
+        ['1000 1000 2000 500 5000 3000 1'],
+        ['2000 1000 2000 500 5000 3000 1'],
+        ['2000 2000 2000 500 5000 3000 1']
+    ]
