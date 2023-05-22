@@ -133,9 +133,6 @@ def main():
                 # Deform mesh vertices
                 reduce_z_values(z, (100+i, 100+i), 75, -10)
 
-                # vert = mesh.vertices + np.sin(i)*0.02
-                # mesh.vertices = o3d.utility.Vector3dVector(vert)
-                # i += 1
                 if (i % speed == 0):
                     vertices = np.column_stack([xx.ravel(), yy.ravel(), z.ravel()])
                     mesh.vertices = o3d.utility.Vector3dVector(vertices)
@@ -146,8 +143,6 @@ def main():
                     gui.Application.instance.post_to_main_thread(window, update_geometry)            
 
                     time.sleep(0.05)
-                # if i[0,0]>100:
-                #    break
 
                 i+=1
 
