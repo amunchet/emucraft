@@ -102,6 +102,8 @@ class Program:
         self.relative_code = 90 # Can be 90, 91
         self.spindle_code = None # Can be 3 or 5
 
+        self.inches = True
+
     def translate_to_xyz(self, arr, MULTIPLIER=1000):
         """
         Translates to the XYZ format from the array of points
@@ -297,7 +299,12 @@ class Program:
                 else:
                     self.current[code] = float(val)
 
-        
+            # Handle inches or metric
+            if ("G", 20) in current_codes:
+                self.inches = True
+            
+            if ("G", 21) in current_codes:
+                self.inches = False
         
         # Run all helper functions
 

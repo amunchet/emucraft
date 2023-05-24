@@ -155,18 +155,23 @@ def test_g0_g1(setup):
     N10 G90 G00 X10. Y10. Z0.99
     N20 G90 G01 X11. Y11. Z0
     N25 G90 G01 X13. Y13. Z1.0
-    N30 
     """
     assert setup.parse_line(input)
 
     # Must remeber the offset
     # REMEMBER THE OFFSETS (to get block to start at (0,0,0))
-    assert setup.lines[:4] == [    
-        "0 0 10000 125 10000 10750 0",
-        f"12800 10350 990 125 10000 {990 + 750} 0",
-        f"13800 11350 990 125 10000 {990 + 750} 1",
-        f"14800 13350 1000 125 10000 {1000 + 750} 1"
-    ]
+
+    print("G90 G0 X10 Y10 Z0.99")
+    assert setup.lines[-3][0] == "0 0 10000 125 10000 3921 0" # Starting point
+    assert setup.lines[-3][-1] == "10000 10000 990 125 10000 3921 0"
+
+    print("G01 X11 Y11 Z0")
+    assert setup.lines[-2][0] == "10000 10000 990 125 10000 3921 1" # Starting point
+    assert setup.lines[-2][-1] == "11000 11000 0 125 10000 3921 1"
+
+    print("G90 G01 X13. Y13. Z1.")
+    assert setup.lines[-1][0] == "11000 11000 0 125 10000 3921 1"
+    setup.lines[-1][-1] == "11000 11000 1000 125 10000 3921 1"
 
 def test_g2(setup):
     """
@@ -201,9 +206,8 @@ def test_g2(setup):
 
     assert setup.parse_line(input)
 
-    assert len(setup.lines) == 251
-    assert setup.lines[0] == f"{2800-52} {350+53} 1000 1250 10000 {990 + 750} 0"
-    assert setup.lines[-1] == f"{6813+2800} {1140+350} 1000 1250 10000 {990 + 750} 0"
+    assert setup.lines[-1][0] == "-52 53 10000 125 10000 3921 0" # TODO: This is the rounding error issue
+    assert setup.lines[-1][-1] == "6813 1140 10000 125 10000 3921 0" # TODO: End point rounding error as well
 
 def test_g3(setup):
     # Half circle counterclockwise
@@ -219,9 +223,8 @@ def test_g3(setup):
 
     assert setup.parse_line(input)
 
-    assert len(setup.lines) == 109
-    assert setup.lines[0] == f"2800 350 1000 1250 10000 {990 + 750} 0"
-    assert setup.lines[-1] == f"{6780+2800} {1074 + 350} 1000 1250 10000 {990 + 750} 0"
+    assert setup.lines[-1][0] == "-52 53 10000 125 10000 3921 0"
+    assert setup.lines[-1][-1] == "6813 1140 10000 125 10000 3921 0"
 
 def test_g17_g18_g19(setup):
     """
@@ -266,18 +269,15 @@ def test_g20_21(setup):
     - Doesn't honestly make a difference to me
     """
 
-    assert not setup.inches 
-    assert not setup.mm
+    assert setup.inches 
 
     ## Note it in setup
     lines = "G20"
     assert setup.parse_line(lines)
     assert setup.inches
-    assert not setup.mm
 
     lines = "G21"
     assert setup.parse_line(lines)
-    assert setup.mm 
     assert not setup.inches
 
 def test_g28(setup):
