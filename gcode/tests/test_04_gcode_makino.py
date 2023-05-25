@@ -78,6 +78,8 @@ def setup():
     """
     a = gcode.Program()
 
+    a.spindle_code = True # Mark spindle as default on
+
     yield a
 
     return "Done"
@@ -342,11 +344,13 @@ def test_g80_g81_g82_g83_g88(setup):
     ## Treat as max Z
     lines = "G90G1G81G99X10.Y10.Z0.1R5.0F30."
     assert setup.parse_line(lines)
-    assert setup.lines[-1] == f"{10000 + 2800} {10000 + 350} 100 1250 10000 {990 + 750} 1" 
 
-    lines = "G90G1G83G99X10.Y10.Z0.1R5.0F30."
+    assert setup.lines[-1] == ["10000 10000 100 125 10000 3921 1"]
+
+    lines = "G90G1G83G99X10.Y10.Z0.2R5.0F30."
     assert setup.parse_line(lines)
-    assert setup.lines[-1] == f"{10000 + 2800} {10000 + 350} 100 1250 10000 {990 + 750} 1" 
+
+    assert setup.lines[-1] == ["10000 10000 200 125 10000 3921 1"]
 
 def test_g90_g91(setup):
     """
@@ -354,7 +358,7 @@ def test_g90_g91(setup):
     """
 
     ## Test G90
-    lines = "G43G91G0X0Y0"
+    lines = "G43G90G0X0Y0"
     assert setup.parse_line(lines)
 
     ## Test G91 Mode
@@ -380,14 +384,14 @@ def test_m6(setup):
     """
     assert setup.parse_line(lines)
 
-    assert setup.lines[-1].split(" ")[-1] == "1"
+    assert setup.lines[-1][-1].split(" ")[-1] == "0"
 
     lines = """M6T17
     G90G0X7Y7
     G90G1X10Y12
     """
     assert setup.parse_line(lines)
-    assert setup.lines[-1].split(" ")[-1] == "0"
+    assert setup.lines[-1][-1].split(" ")[-1] == "1"
     ## I guess we need to load in the new tool data information from comments
 
 def test_m3_m5(setup):
@@ -407,21 +411,29 @@ def test_m3_m5(setup):
     G90G0X12Y12
     """
     assert setup.parse_line(lines)
-    assert setup.lines[-1].split(" ")[-1] == "0" # Since we're in rapid
+    assert setup.lines[-1][-1].split(" ")[-1] == "0" # Since we're in rapid
 
     lines = """
     G90G1X17Y17F17.
     """
-    assert setup.parse_lines(lines)
-    assert setup.lines[-1].split(" ")[-1] == "1" # Since it's a cutting move
+    assert setup.parse_line(lines)
+    assert setup.lines[-1][-1].split(" ")[-1] == "1" # Since it's a cutting move
 
     lines = """M5
     G90G1X19Y19F23
     """
 
-    assert setup.parse_lines(lines)
-    assert setup.lines[-1].split(" ")[-1] == "0" # Since spindle is off
+    assert setup.parse_line(lines)
+    assert setup.lines[-1][-1].split(" ")[-1] == "0" # Since spindle is off
 
+    lines = """M5
+    G90G1X19Y19F23
+    M3S100000
+    G90G1X20Y20F23
+    """
+
+    assert setup.parse_line(lines)
+    assert setup.lines[-1][-1].split(" ")[-1] == "1" # Since spindle turned back on
 
 
 def test_m30(setup):

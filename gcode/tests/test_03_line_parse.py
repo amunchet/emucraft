@@ -29,7 +29,7 @@ def setup():
 
     a.current = {
         "G" : [90, 0],
-        "M" : [],
+        "M" : [3],
         "X": 0,
         "Y" : 0,
         "Z" : 10,
@@ -42,6 +42,8 @@ def setup():
         "D" : None,
         "T" : 6
     }
+
+    a.spindle_code = True
     yield a
 
     return "Done"
