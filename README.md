@@ -1,11 +1,16 @@
 # Emucraft
+
+## TODO: Need to have a block diagram of the pipeline (Gcode parser -> Arc helper -> C Kernel -> Blocks output -> Python renderer web page results)
 Emucraft is the child of Emu.  
 
 The goal is to determine whether or not a collision occurs during a G-code program.
 
 This is done through modelling of the block and resulting 3D approxmiation of the machining path, compared with the cutting tool information.
 
-It will rely on `trimesh` for visualization.  Eventually, it may use `three.js` to visualize in a separate component.
+Components:
+    - G-code parser to XYZ file (Python)
+    - Kernel in C to do actual collision detection and to return an array of block state
+    - `Open3D` (Python) to render final block state or any collision states for visualization.
 
 Key improvements over Emu:
 
@@ -13,12 +18,18 @@ Key improvements over Emu:
 - Full tests and coverage
 - Easy API
 
+## KNOWN ISSUES
+- Helical interpolation is lazy - we need to ensure it checks at the lowest Z value (i.e., the destination) and not anywhere else.  Right now, the helical interpolation is only being applied in X and Y.  This shouldn't matter for normal 3 axis verifications, but it's worth noting.
+
 ## Roadmap
-1.  Get the kernel of `cubes` working.  Be able to simulate cube interactions
-2.  Translate G-code to `cubes` and simulate physical part being machined
-3.  Scale up and determine collisions
+1.  [COMPLETE] Get the kernel working.  Be able to simulate cuts and block state.
+2.  Translate G-code to `XYZ format` and simulate physical part being machined
+    a.  [COMPLETE] Arc helper for helical interpolation
+3.  Check performance
+4.  UI frontend
+5.  Integration into production process (CI/CD)
 
-
+## Performance
 So, using `numpy` turned out to be too slow even still.
 
 At roughly the 5_000 x 5_000 size, it took ~.4 seconds to remove a sample section.
