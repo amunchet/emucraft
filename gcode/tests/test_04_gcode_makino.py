@@ -435,7 +435,6 @@ def test_m3_m5(setup):
     assert setup.parse_line(lines)
     assert setup.lines[-1][-1].split(" ")[-1] == "1" # Since spindle turned back on
 
-
 def test_m30(setup):
     """
     Program end
