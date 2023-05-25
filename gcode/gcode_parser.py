@@ -100,7 +100,7 @@ class Program:
         self.offset_code = 40 # Can be 40, 41, 42, 43
         self.canned_cycle_code = 80 # Can be 80, 81, 82, 83, 88
         self.relative_code = 90 # Can be 90, 91
-        self.spindle_code = None # Can be 3 or 5
+        self.spindle_code = None # Can be True, False, None
 
         self.inches = True
 
@@ -115,7 +115,7 @@ class Program:
             XXXXX XXXXX XXXXX XXXXXX XXXXX XXXXX XXXXX
         """
         output = []
-        cutting = 0 if self.rapid_code == 0 else 1
+        cutting = 0 if (self.rapid_code == 0 or not self.spindle_code ) else 1
         for (x,y,z) in arr:
             output.append(f"{int(x)} {int(y)} {int(z)} {int(self.tool_diameter * MULTIPLIER)} {int(self.tool_holder_diameter * MULTIPLIER)} {int(self.tool_holder_length * MULTIPLIER)} {cutting}")
 
@@ -278,8 +278,18 @@ class Program:
 
             # Get the current codes 
             current_codes = codes_parse(line)[0]
-            logger.error(current_codes)
+            logger.debug(current_codes)
             # Run Motion parsing function
+
+            if ("M", 30) in current_codes:
+                return True
+
+            # Check spindle on
+            if ("M", 5) in current_codes:
+                self.spindle_code = False
+            elif ("M", 3) in current_codes:
+                self.spindle_code = True
+            
 
             # Fix for Canned Cycles
             temp_g1 = False
