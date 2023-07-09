@@ -5,3 +5,4 @@ a.out
 *.block
 venv-old/**
 images/**
+gcode/output.xyz-old
