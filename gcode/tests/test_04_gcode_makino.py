@@ -455,3 +455,33 @@ def test_output_xyz(setup):
     """
     Tests outputting the XYZ file
     """
+
+def test_adjust_coordinates(setup):
+    """
+    Tests adjustment of coordinates to put them all in positive
+    """
+    lines = """
+    G20 ; Set units to inches
+    G90 ; Set absolute coordinates
+
+    G0 X-1.0 Y-1.0 ; Rapid move to starting position
+
+    ; Draw a circle
+    G3 X-2.0 Y-1.0 I-1.0 J0.0 ; Clockwise arc from (-10, -10) to (-20, -10) with center at (-20, 0)
+
+    ; Draw a line
+    G1 X-2.0 Y-2.0 ; Move to (-20, -20)
+
+    M2 ; Program end and stop
+    """
+    assert setup.parse_line(lines)
+    
+    assert setup.lines[0] == ['0 0 10000 0 0 0 0', '0 0 10000 0 0 0 0']
+    assert setup.lines[-1] == ['-2000 -2000 10000 0 0 0 1', '-2000 -2000 10000 0 0 0 1']
+    
+    # The smallest value is 2000
+
+    setup.adjust_coordinates()
+
+    assert setup.lines[0] == ['2000 2000 10000 0 0 0 0', '2000 2000 10000 0 0 0 0']
+    assert setup.lines[-1] == ['0 0 10000 0 0 0 1', '0 0 10000 0 0 0 1']

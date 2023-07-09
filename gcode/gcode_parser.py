@@ -322,3 +322,32 @@ class Program:
             getattr(self, item)()
         
         return True
+
+    def adjust_coordinates(self):
+        """
+        Adjusts the coordinates to have all X and Y in positive coordinates
+        """
+        smallest_x = 0
+        smallest_y = 0
+
+        for section in self.lines:
+            for line in section:
+                splits = line.split(" ")
+                smallest_x = min(smallest_x, int(splits[0]))
+                smallest_y = min(smallest_y, int(splits[1]))
+
+        if smallest_x >= 0 and smallest_y >= 0:
+            return True
+
+        for section_idx, section in enumerate(self.lines):
+            for line_idx, line in enumerate(section):
+                splits = line.split(" ")
+                if smallest_x < 0:
+                    splits[0] = str(int(splits[0]) - smallest_x)
+                
+                if smallest_y < 0:
+                    splits[1] = str(int(splits[1]) - smallest_y)
+
+                self.lines[section_idx][line_idx] = " ".join(splits)
+        
+        return False
