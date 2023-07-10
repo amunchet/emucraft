@@ -26,7 +26,7 @@ def downsample(z, dim_x=5000, dim_y=5000, divisor=1000):
     reshaped = z.reshape(divisor, int(dim_x/divisor), divisor, int(dim_y/divisor))
     return np.min(reshaped, axis=(1,3))
 
-def reduce_z_values(array, center, diameter, offset):
+def reduce_z_values(array, center, diameter, z_value):
     """
     Sample animation function
     """
@@ -37,7 +37,7 @@ def reduce_z_values(array, center, diameter, offset):
     distances = np.sqrt((x_indices - x_center)**2 + (y_indices - y_center)**2)
 
     mask = distances <= radius
-    array[mask] = np.minimum(array[mask], offset)
+    array[mask] = np.minimum(array[mask], z_value)
 
 
 
@@ -128,11 +128,17 @@ def main():
         global paused
         global speed
 
-        while i < 1000:
-            if(not paused):
-                # Deform mesh vertices
-                reduce_z_values(z, (100+i, 100+i), 75, -10)
 
+        with open("gcode/output.xyz") as f:
+            lines = f.readlines()
+
+
+        for i,item in enumerate(lines):
+            cur_x,cur_y,cur_z,diameter,tool_diam,tool_length,move_type = [int(int(x)/10) for x in item.split(" ")]
+            if not paused:
+                print((cur_x, cur_y, cur_z))
+                # print(diameter)
+                reduce_z_values(z, (cur_x, cur_y), diameter, cur_z)
                 if (i % speed == 0):
                     vertices = np.column_stack([xx.ravel(), yy.ravel(), z.ravel()])
                     mesh.vertices = o3d.utility.Vector3dVector(vertices)
@@ -144,7 +150,6 @@ def main():
 
                     time.sleep(0.05)
 
-                i+=1
 
     threading.Thread(target=thread_main).start()
 
