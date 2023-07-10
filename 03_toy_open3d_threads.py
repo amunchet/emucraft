@@ -129,7 +129,7 @@ def main():
         global speed
 
 
-        with open("gcode/output.xyz") as f:
+        with open("gcode/tests/test.xyz") as f:
             lines = f.readlines()
 
 

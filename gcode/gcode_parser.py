@@ -351,3 +351,9 @@ class Program:
                 self.lines[section_idx][line_idx] = " ".join(splits)
         
         return False
+    
+    def scale_coordinates(self):
+        """
+        Scales the coordinates
+        """
+        
