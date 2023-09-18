@@ -206,7 +206,9 @@ class Program:
 
         # Add to lines (make sure we use Z heights)
         if retval:
+            logger.debug(f"Section line count:{len(retval)}")
             self.lines.append(retval)
+            logger.debug(f"Current number of lines in self.lines:{len(self.lines)}")
 
 
     def helper_block(self):
@@ -232,6 +234,7 @@ class Program:
         """
         Parses Lines
         """
+        logger.debug("----------------")
         logger.debug(f"Lines:{lines}")
 
         
@@ -297,6 +300,11 @@ class Program:
                 current_codes.append(("G", 1))
                 temp_g1 = True
 
+            # Remove G4 Code
+            if(('G', 4) in current_codes):
+                current_codes = [x for x in current_codes if x != ('G', 4)]
+                continue
+
             self.motion_parse(line, current_codes)
 
             if temp_g1:
@@ -321,6 +329,7 @@ class Program:
         for item in [x for x in dir(self) if x.startswith("helper_")]:
             getattr(self, item)()
         
+        logger.debug("-------------")
         return True
 
     def adjust_coordinates(self):
