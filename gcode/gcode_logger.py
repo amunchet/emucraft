@@ -14,7 +14,7 @@ if level == "DEBUG":
 else:
     level = logging.WARNING
 """
-level = logging.WARNING
+level = logging.DEBUG
 
 
 logger = logging.getLogger("gcode_logger")
@@ -34,4 +34,4 @@ formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(messag
 console_handler.setFormatter(formatter)
 
 # Attach the console handler to the logger
-# logger.addHandler(console_handler)
+logger.addHandler(console_handler)

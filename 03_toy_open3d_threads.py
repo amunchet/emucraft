@@ -15,8 +15,10 @@ def load_block():
         for x, line in enumerate(f.readlines()):
             for y, item in enumerate(line.split(" ")):
                 if item != "\n" and item != "":
-                    z[x,y] = int(item)
+                    z[x,y] = int(item) / 10
+                    z[x,y] = 200
 
+    print(z)
     return z
 
 def downsample(z, dim_x=5000, dim_y=5000, divisor=1000):
@@ -129,7 +131,7 @@ def main():
         global speed
 
 
-        with open("gcode/tests/test.xyz") as f:
+        with open("gcode/tests/small.xyz") as f:
             lines = f.readlines()
 
 
