@@ -1,2 +1,3 @@
 *.so
 **.sw**
+cffi_toy/**
