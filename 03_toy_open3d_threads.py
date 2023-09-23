@@ -66,14 +66,14 @@ def main():
         # Handle keypress event
         global paused
         global speed
-
         key = key_event.key
+
         if key == ord('q') or key == ord('Q'):
             gui.Application.instance.quit()
         elif key == ord('p') or key == ord('P'):
-            paused = True
+            paused = not paused
         elif key == ord(' '):
-            paused = False
+            paused = not paused
         elif key == ord("f") or key == ord("F"):
             speed = speed * 2
         
@@ -140,14 +140,26 @@ def main():
 
         seen_x = None
         seen_y = None
+        seen_z = None
+        skipping_z = False
         for i,item in enumerate(lines):
-            cur_x,cur_y,cur_z,diameter,tool_diam,tool_length,move_type = [int(int(x)/10) for x in item.split(" ")]
+            cur_x,cur_y,cur_z,diameter,tool_diam,tool_length,move_type = [round(int(x)/10) for x in item.split(" ")]
+            while paused:
+                time.sleep(1)
             if not paused:
                 print((cur_x, cur_y, cur_z))
                 if cur_x == seen_x and cur_y == seen_y:
+                    skipping_z = True
                     continue
+                
+                if skipping_z:
+                    reduce_z_values(z, (seen_x, seen_y), diameter, seen_z)
+                    skipping_z = False
+
                 seen_x = cur_x
                 seen_y = cur_y
+                seen_z = cur_z
+                
                 # print(diameter)
                 reduce_z_values(z, (cur_x, cur_y), diameter, cur_z)
                 if (i % speed == 0):
