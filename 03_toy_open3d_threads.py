@@ -6,22 +6,26 @@ import open3d.visualization.gui as gui
 import open3d.visualization.rendering as rendering
 
 def load_block():
-    dim_x = 5000
-    dim_y = 5000
+    dim_x = 500
+    dim_y = 500
 
     z = np.zeros((dim_x,dim_y))
 
+    """
     with open("toy-final.block", "r") as f:
         for x, line in enumerate(f.readlines()):
             for y, item in enumerate(line.split(" ")):
                 if item != "\n" and item != "":
                     z[x,y] = int(item) / 10
                     z[x,y] = 200
-
+    """
+    for x in range(0,dim_x):
+        for y in range(0,dim_y):
+            z[x,y] = 200
     print(z)
     return z
 
-def downsample(z, dim_x=5000, dim_y=5000, divisor=1000):
+def downsample(z, dim_x=500, dim_y=500, divisor=500):
     """
     Downsampler
     """
@@ -131,14 +135,19 @@ def main():
         global speed
 
 
-        with open("gcode/tests/small.xyz") as f:
+        with open("gcode/tests/test.xyz") as f:
             lines = f.readlines()
 
-
+        seen_x = None
+        seen_y = None
         for i,item in enumerate(lines):
             cur_x,cur_y,cur_z,diameter,tool_diam,tool_length,move_type = [int(int(x)/10) for x in item.split(" ")]
             if not paused:
                 print((cur_x, cur_y, cur_z))
+                if cur_x == seen_x and cur_y == seen_y:
+                    continue
+                seen_x = cur_x
+                seen_y = cur_y
                 # print(diameter)
                 reduce_z_values(z, (cur_x, cur_y), diameter, cur_z)
                 if (i % speed == 0):
