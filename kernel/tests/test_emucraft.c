@@ -1,4 +1,4 @@
-#include "../include/functions.h"
+#include "../src/functions.h"
 #include <math.h>
 #include <stdio.h>
 
@@ -53,7 +53,7 @@ int check_correct_cut(int x,int y){
 	
 	return BLOCK[temp_x * DIM_X + temp_y];
 }
-int setup(){
+int test_setup(){
 
 	BLOCK = malloc ((DIM_X * DIM_Y) * sizeof(int));
 	for (int i=0; i<DIM_X * DIM_Y; i++){
@@ -243,7 +243,7 @@ int test_correct_circle_boundary(){
 
 int main(){
 	printf("Starting setup...\n");
-	setup();
+	test_setup();
 
 	printf("Setup done\n");
 
@@ -264,7 +264,7 @@ int main(){
 	}
 	
 	free(BLOCK);
-	setup();
+	test_setup();
 
 	// Test recutting (or cutting at lower height)
 
@@ -292,7 +292,7 @@ int main(){
 	HEIGHT = 2000;
 
 	free(BLOCK);
-	setup();
+	test_setup();
 
 	printf("Testing the circle removal...\n");
 	output = test_correct_circle_boundary();

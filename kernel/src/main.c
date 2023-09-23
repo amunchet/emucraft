@@ -1,57 +1,36 @@
-#include "../include/functions.h"
+#include "functions.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
+extern int* BLOCK;
 
-// Variables
-int DIM_X;
-int DIM_Y;
+int main(int argc, char **argv){
 
-int HEIGHT; // Max is Int16, which is ~30k or 30" in the real world
+    if(argc < 5){
+        printf("Too few arguments.  Arguments: [DIM_X] [DIM_Y] [HEIGHT] [XYZ FILE]");
+        return 1;
+    }else{
+        printf("%s\n", argv[0]);
+        printf("DIM_X: %s\n", argv[1]);
+        printf("DIM_Y: %s\n", argv[2]);
+        printf("HEIGHT: %s\n", argv[3]);
+        printf("XYZ FILE: %s\n", argv[4]);
+    }
 
-int CUTTER_DIAMETER;  	
-int CUTTER_HEIGHT;
-int CUTTER_X;
-int CUTTER_Y;
+    int DIM_X = atoi(argv[1]);
+    int DIM_Y = atoi(argv[2]);
+    int HEIGHT = atoi(argv[3]);
+    char *FILENAME = argv[4];
 
-int* BLOCK;
+    if(DIM_X == 0 || DIM_Y == 0 || HEIGHT == 0){
+        printf("Invalid value passed for DIM_X, DIM_Y, or HEIGHT.\n");
+        return 1;
+    }
 
-
-// Sets up the variables
-DIM_X = 5000;
-DIM_Y = 5000;
-
-HEIGHT = 1000; // Max is Int16, which is ~30k or 30" in the real world
-
-CUTTER_DIAMETER = 250;  	
-CUTTER_HEIGHT = 750;		
-
-CUTTER_X = 300;
-CUTTER_Y = 300;
-
-
-
-int setup(){
-
-	BLOCK = malloc ((DIM_X * DIM_Y) * sizeof(int));
-	for (int i=0; i<DIM_X * DIM_Y; i++){
-		BLOCK[i] = 2000;
-
-	}
-	// Print 10 x 10 block
-	//print_block(BLOCK, DIM_X, DIM_Y, 0,0, 10);
-
-	return 0;
-}
-
-
-
-
-
-int main(){
 	printf("Starting setup...\n");
-	setup();
+	setup(DIM_X, DIM_Y, HEIGHT);
 
 	printf("Setup done\n");
 
@@ -61,19 +40,14 @@ int main(){
 
 	int success = write_block(BLOCK, DIM_X, DIM_Y, "toy.block");
 	if(success != 0){
-		printf("ERROR - write failed.");
+		printf("ERROR - write failed.\n");
 		return 1;
 
 	}
 	
-	success = process_from_file(BLOCK, DIM_X, DIM_Y, "toy.xyz");
-
-	
-	
-	
+	success = process_from_file(BLOCK, DIM_X, DIM_Y, FILENAME);
 
 	printf("Done.\n");
 
 	return 0;
 }
-

@@ -1,10 +1,15 @@
+#include "functions.h"
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <math.h>
-#include <assert.h>
 #include <string.h>
 
-#define PI 3.14159265
+
+int* BLOCK;
+
+void print_global_block(int DIM_X, int DIM_Y, int start_x, int start_y, int size){
+    print_block(BLOCK, DIM_X, DIM_Y, start_x, start_y, size);
+}
 
 void print_block(int *BLOCK, int DIM_X, int DIM_Y, int start_x, int start_y, int size)
 {
@@ -32,6 +37,7 @@ void print_block(int *BLOCK, int DIM_X, int DIM_Y, int start_x, int start_y, int
 		printf("\n");
 	}
 }
+
 int check_distance(int x, int y, int CUTTER_X, int CUTTER_Y, int CUTTER_DIAMETER)
 {
 	int distance_x = abs(x - CUTTER_X);
@@ -211,3 +217,17 @@ int process_from_file(int *BLOCK, int DIM_X, int DIM_Y, char *filename)
 	
 	return 1;
 }
+
+int setup(int DIM_X, int DIM_Y, int HEIGHT){
+
+	BLOCK = malloc ((DIM_X * DIM_Y) * sizeof(int));
+	for (int i=0; i<DIM_X * DIM_Y; i++){
+		BLOCK[i] = HEIGHT;
+
+	}
+	// Print 10 x 10 block
+	//print_block(BLOCK, DIM_X, DIM_Y, 0,0, 10);
+
+	return 0;
+}
+
