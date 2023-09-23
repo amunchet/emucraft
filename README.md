@@ -23,7 +23,7 @@ Key improvements over Emu:
 
 ## Roadmap
 1.  [COMPLETE] Get the kernel working.  Be able to simulate cuts and block state.
-2.  Translate G-code to `XYZ format` and simulate physical part being machined
+2.  [COMPLETE] Translate G-code to `XYZ format` and simulate physical part being machined
     a.  [COMPLETE] Arc helper for helical interpolation
 3.  Check performance
 4.  UI frontend
