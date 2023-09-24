@@ -45,19 +45,14 @@ def reduce_z_values(array, center, diameter, z_value):
     mask = distances <= radius
     array[mask] = np.minimum(array[mask], z_value)
 
-
-
 paused = False
 speed = 10
 
 def main():
-
-
     z = load_block()
     z = downsample(z)
-
     gui.Application.instance.initialize()
-
+    
     window = gui.Application.instance.create_window('img')
     widget = gui.SceneWidget()
     widget.scene = rendering.Open3DScene(window.renderer)
@@ -147,7 +142,7 @@ def main():
             while paused:
                 time.sleep(1)
             if not paused:
-                print((cur_x, cur_y, cur_z))
+                # print((cur_x, cur_y, cur_z))
                 if cur_x == seen_x and cur_y == seen_y:
                     skipping_z = True
                     continue
@@ -177,6 +172,7 @@ def main():
     threading.Thread(target=thread_main).start()
 
     gui.Application.instance.run()
+   
 
 if __name__ == "__main__":
     main()
