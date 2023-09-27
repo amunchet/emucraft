@@ -54,8 +54,6 @@ for i in range(n-1):
 mesh.vertices = o3d.utility.Vector3dVector(vertices)
 mesh.triangles = o3d.utility.Vector3iVector(triangles)
 
-mesh.compute_vertex_normals() # TODO: Maybe I can delete this?
-
 # mat = rendering.Material()
 mat = rendering.MaterialRecord()
 mat.shader = 'defaultLit'
@@ -108,6 +106,7 @@ def thread_main():
                 vertices = np.column_stack([xx.ravel(), yy.ravel(), z.ravel()])
                 mesh.vertices = o3d.utility.Vector3dVector(vertices)
                 mesh.compute_vertex_normals()
+            
             # app.post_to_main_thread(w, update_geometry)
             # update_geometry()
             # time.sleep(0.001)
@@ -131,14 +130,39 @@ def update_geometry():
         updated = False
 
     app.run_one_tick()
+
+
+def camera_reset(w, idx=0):
+    height = 750
+    if idx == 0:
+        w.setup_camera(90, [0,0,0], [500,500,height], [0,0,1])
+    elif idx == 1:
+        w.setup_camera(90, [250,250,0], [500, 0 , height], [0,0,1])
+    elif idx == 2:
+        w.setup_camera(90, [250,250,0], [0, 500 , height], [0,0,1])
+    elif idx == 3:
+        w.setup_camera(90, [250,250,0], [0, 0, height], [0,0,1])
+
     
+
 # thread_main()
 # Continue to run after the loop is finished
 threading.Thread(target=thread_main).start()
 
 w.show_skybox(False)
+w.show_settings = False
 w.set_background((0.1, 0.1, 0.1, 0.5), None)
 w.setup_camera(90, [0,0,0], [500,500,500], [0,0,1])
+w.add_action("Camera View 1", lambda x: camera_reset(x, 0))
+w.add_action("Camera View 2", lambda x: camera_reset(x, 1))
+w.add_action("Camera View 3", lambda x: camera_reset(x, 2))
+w.add_action("Camera View 4", lambda x: camera_reset(x, 3))
+w.add_action("--------", lambda x: x)
+
+
+
+
+
 while True:
     update_geometry()
 
