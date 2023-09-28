@@ -1,3 +1,8 @@
+"""
+This is borrowed from the faro code from Facebook
+
+I could never get this way to work
+"""
 import os
 import time
 import threading

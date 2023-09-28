@@ -131,7 +131,6 @@ def update_geometry():
 
     app.run_one_tick()
 
-
 def camera_reset(w, idx=0):
     height = 750
     if idx == 0:
@@ -142,8 +141,6 @@ def camera_reset(w, idx=0):
         w.setup_camera(90, [250,250,0], [0, 500 , height], [0,0,1])
     elif idx == 3:
         w.setup_camera(90, [250,250,0], [0, 0, height], [0,0,1])
-
-    
 
 # thread_main()
 # Continue to run after the loop is finished
@@ -158,10 +155,6 @@ w.add_action("Camera View 2", lambda x: camera_reset(x, 1))
 w.add_action("Camera View 3", lambda x: camera_reset(x, 2))
 w.add_action("Camera View 4", lambda x: camera_reset(x, 3))
 w.add_action("--------", lambda x: x)
-
-
-
-
 
 while True:
     update_geometry()

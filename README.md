@@ -7,10 +7,14 @@ The goal is to determine whether or not a collision occurs during a G-code progr
 
 This is done through modelling of the block and resulting 3D approxmiation of the machining path, compared with the cutting tool information.
 
-Components:
-    - G-code parser to XYZ file (Python)
-    - Kernel in C to do actual collision detection and to return an array of block state
-    - `Open3D` (Python) to render final block state or any collision states for visualization.
+Functional Components:
+    - `gcode`: G-code parser to XYZ file (Python)
+    - `kernel`: Kernel in C to do actual collision detection and to return an array of block state
+    - `tests`
+    - `toys` - sample programs to work out concepts
+    - Open3D (Python) to render final block state or any collision states for visualization.
+        - `visualize.py` - this is the offline visualizer.  There are some performance improvements over the served version
+        - `webrtc.py` - this is the served WebRTC rendering of Open3D.  To be used in a web-service based Emucraft.
 
 Key improvements over Emu:
 
