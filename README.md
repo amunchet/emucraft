@@ -56,3 +56,6 @@ I think we're going to create a Python extension to leverage the `Open3d` easy v
 - http://www.open3d.org/docs/0.14.1/tutorial/visualization/customized_visualization.html?highlight=renderoption
 
 - https://github.com/isl-org/Open3D/issues/3307
+
+---
+Gloria Deo sit.

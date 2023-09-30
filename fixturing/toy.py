@@ -1,19 +1,13 @@
+"""
+ChatGPT helped with some of the code, but the rest came from this link:
+- http://www.open3d.org/docs/latest/tutorial/geometry/ray_casting.html
+"""
 import sys
 import open3d as o3d
 import numpy as np
 import time
 
 start_time = time.time()
-
-
-# http://www.open3d.org/docs/latest/tutorial/geometry/ray_casting.html
-
-# TODO: Couple of things to try - we might want to bring in lots of Tensors for the entire area, then run cast_rays
-
-# TODO: We might try to do Multi-threading
-
-# TODO: Also might try CUDA
-
 
 def ray_cast(mesh, rays):
     # Create a ray from the start_point in the specified direction
@@ -27,41 +21,18 @@ def ray_cast(mesh, rays):
     # x,y,z = start_point
     scene = o3d.t.geometry.RaycastingScene()
     cube_id = scene.add_triangles(mesh)
-
-    """
-    rays = o3d.core.Tensor(
-        [
-            # [0.5, 0.5, 10, 0, 0, -1], 
-            [x, y, z, 0, 0, -1], 
-        ], dtype=o3d.core.Dtype.Float32
-    )
-    """
     ans = scene.cast_rays(rays)
     return ans
 
-    """
-    # Find the intersection points and distances
-    intersects = np.asarray(result[0])
-    distances = np.asarray(result[1])
-
-    if len(intersects) > 0:
-        # Sort the intersection points by distance
-        sorted_indices = np.argsort(distances)
-        intersects = intersects[sorted_indices]
-        distances = distances[sorted_indices]
-
-        # Get the Z value of the closest intersection point
-        closest_intersection = intersects[0]
-        z_value = closest_intersection[2]
-
-        return z_value
-    else:
-        # No intersection found, return a value indicating empty space (e.g., 0)
-        return 0.0
-    """
-
 # Load STL file and convert to mesh
 mesh = o3d.io.read_triangle_mesh("kurt.stl")
+
+
+# mesh = o3d.io.read_triangle_mesh("sphere.stl")
+
+
+
+
 a = o3d.t.geometry.TriangleMesh()
 mesh = a.from_legacy(mesh)
 
@@ -72,6 +43,7 @@ min_bound = a.min_bound
 max_bound = a.max_bound
 
 div_factor = 39.37 # 1000 / 25.4 - I think this gives me .001" increments
+# div_factor = 1000
 
 length_x_thousandths = int((max_bound[0].item() - min_bound[0].item()) * div_factor)
 length_y_thousandths = int((max_bound[1].item() - min_bound[1].item()) * div_factor)
@@ -88,40 +60,9 @@ ray_arr = []
 min_bound_x = min_bound[0].item()
 min_bound_y = min_bound[1].item()
 max_z = max_bound[2].item()
+min_z = min_bound[2].item()
 
-
-"""
-for x in range(length_x_thousandths):
-    print("X/X Length:", x, length_x_thousandths)
-    for y in range(length_y_thousandths):
-        # print("Y/Y length:", y, length_y_thousandths)
-        # Calculate the corresponding coordinates in the mesh
-        
-        x_coord = (x / div_factor) + min_bound_x
-        y_coord = (y / div_factor) + min_bound_y
-
-        # Define a start point for the ray casting
-        start_point = [
-            x_coord,
-            y_coord,
-            max_z + 1.0,
-        ]  # Ensuring the ray starts above the mesh
-        # print("Start point:", start_point)
-        # Specify the ray direction (e.g., pointing downwards)
-        # direction = [0, 0, -1]
-
-        # Perform ray casting to find the Z value at the point
-        # z_value = ray_cast(mesh, start_point, direction)
-        ray_arr.append([x_coord, y_coord, max_z + 1.0, 0, 0, -1])
-
-        # z_value = ray_cast(mesh, start_point)['t_hit'].item()
-
-
-        #print("Z_value:", z_value)
-        # print("-------")
-        # Assign the Z value to the array
-        # array_2d[x,y] = z_value
-"""
+height_z = max_z - min_z
 
 
 # Create arrays for x and y coordinates separately
@@ -159,7 +100,36 @@ rays = o3d.core.Tensor(
 )   
 z_value = ray_cast(mesh, rays)
 
+# z_value = ray_cast(mesh, start_point)['t_hit'].item()
 
+# Write out to a file
+print("Converting to array...")
+# numpy_array = np.asarray(z_value["t_hit"])
+numpy_array = (z_value["t_hit"] - height_z) * -1000
+
+numpy_array = numpy_array / 10 # Reduce height for vis
+
+# Specify the output file path
+output_file_path = "toy.block"
+
+print("Writing file...")
+# Open the file for writing
+with open(output_file_path, "w") as file:
+    # Iterate through the NumPy array and write each item
+    for i, item in enumerate(numpy_array):
+        x = item.item()
+        if x < 0:
+            x = 0
+        try:
+            file.write(str(round(x)))
+        except OverflowError:
+            file.write("0")
+        
+        # Check if it's the 1000th item and add "\r\n"
+        if (i + 1) % length_y_thousandths == 0:
+            file.write("\r\n")
+        else:
+            file.write(" ")
 
 # Now, 'array_2d' contains the desired 2D representation of the solid with Z values or 0 for empty space
 
