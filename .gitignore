@@ -7,3 +7,4 @@ venv-old/**
 images/**
 gcode/output.xyz-old
 gcode/debug.log
+.DS_Store

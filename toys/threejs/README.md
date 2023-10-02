@@ -1,0 +1,2 @@
+# ThreeJS
+Instead of rendering on server with very expensive CPU/GPU, why not just have the clients render the XYZ file themselves?  That way, it can just be an API call return for the XYZ translation of the G-code 
