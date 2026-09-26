@@ -208,7 +208,7 @@ Measured on a 4-core container:
 
 | Program | Check | Notes |
 |---|---|---|
-| `makino_roughing.nc` (3,126 lines, 0.375" end mill) | 0.35 s | 5.5 M cells at 0.0019", 4 threads |
+| `makino_roughing.nc` (3,126 lines, 0.375" end mill) | 0.3–0.4 s | 5.5 M cells at 0.0019", 4 threads; about 1 s for a whole `emucraft check` run including start-up |
 | 200,000-line 3D ball-mill finish | 5.1 s | 5.5 M cells, 4 threads (11 s on 1) |
 | Browser replay of `makino_roughing.nc` | 0.2 s | WebAssembly, 1.5 M cells |
 
