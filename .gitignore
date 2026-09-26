@@ -1,7 +1,13 @@
 venv
+venv-old/**
 __pycache__
+*.egg-info/
+/build/
+/dist/
+.pytest_cache/
+node_modules/
 *.stl
 a.out
 *.block
-venv-old/**
 images/**
+*.opt.nc

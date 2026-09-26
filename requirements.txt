@@ -1,12 +1,6 @@
-Flask
-click
-dash
-numpy
-open3d 
-Pillow
-psutil
-pyglet
-pytest
-trimesh
-matplotlib
-# dotenv
+# Emucraft has no runtime dependencies beyond Python 3.9+ and a C compiler
+# (the kernel is compiled on first use; `pip install .` prebuilds it).
+tomli>=1.1; python_version < "3.11"
+
+# development
+pytest>=7
