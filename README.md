@@ -132,8 +132,9 @@ Two rules; where both apply, the slower feed wins:
 - **Tool load.** The simulation measures how much material every short piece
   of the path removes. Where the material removal rate goes above
   `load_limit` × the tool's typical cut (inside corners, full-width slots,
-  rest material), the feed is lowered to hold that rate. Ramps and plunges
-  that are already programmed slowly are left alone.
+  rest material), the feed is lowered to hold that rate. Because the rule
+  works on removal rate, a ramp or plunge that is already programmed slowly
+  is only slowed further if it still removes material faster than the limit.
 
 Presets (`aluminum`, `steel`, `stainless`, `titanium`, `inconel`) are starting
 points; every value can be set on the command line, in the viewer's Optimize

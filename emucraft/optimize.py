@@ -7,8 +7,9 @@ Two rules, combined by taking the slower feed:
 * **load** -- where the simulation shows the tool removing material faster
   than the nominal cut (inside corners, full-width slots, rest material),
   scale the feed down so the material removal rate (MRR) stays at the limit.
-  At a given spindle speed the cutting force follows the MRR, so ramps and
-  plunges that are already programmed slowly are left alone.
+  At a given spindle speed the cutting force follows the MRR, so a ramp or
+  plunge that is already programmed slowly is only slowed further if it still
+  removes material faster than the limit.
 
 Optionally, feed moves that cut nothing ("air cuts") can be sped up.
 
