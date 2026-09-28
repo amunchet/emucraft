@@ -20,15 +20,36 @@ FAIL  5 collisions
 
 ## Quick start
 
-Requirements: Python 3.9+ and a C compiler (the kernel is compiled on first
-use). There are no other runtime dependencies.
-
 ```sh
-pip install -e .                          # or run `python -m emucraft` from a checkout
+pip install -e .                          # see Installing below
 emucraft check examples/makino_roughing.nc
 emucraft serve --open                     # viewer on http://127.0.0.1:8765
 emucraft optimize examples/pocket_corners.nc --material titanium
 ```
+
+### Installing
+
+Emucraft needs Python 3.9 or newer and a C compiler (gcc or clang; the
+kernel is compiled on first use). There are no other runtime dependencies.
+
+Older Linux installs can be behind; Ubuntu 18.04, a common WSL image, ships
+Python 3.6. Check with `python3 --version`. If it is older than 3.9,
+[uv](https://docs.astral.sh/uv/) installs a current Python for your user
+without root:
+
+```sh
+curl -LsSf https://astral.sh/uv/install.sh | sh    # then open a new terminal
+cd emucraft
+uv venv --python 3.12
+source .venv/bin/activate
+uv pip install -e .
+sudo apt install build-essential                   # only if gcc is missing
+emucraft check examples/crash_demo.nc
+```
+
+On WSL you can instead install a newer distribution from PowerShell
+(`wsl --install -d Ubuntu-24.04` comes with Python 3.12). `emucraft serve`
+works from WSL: open http://localhost:8765 in your Windows browser.
 
 ## How it fits together
 

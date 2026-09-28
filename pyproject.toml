@@ -1,5 +1,7 @@
 [build-system]
-requires = ["setuptools>=64", "wheel"]
+# Low floor on purpose: an old pip can then reach setup.py, which explains the
+# Python requirement. Current pips install a current setuptools anyway.
+requires = ["setuptools>=40.8.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]

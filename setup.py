@@ -1,13 +1,23 @@
 """Builds the C kernel into the package so installs work without a compiler at
 run time. Everything else lives in pyproject.toml."""
 
-import shutil
 import sys
-from pathlib import Path
 
-from setuptools import setup
-from setuptools.command.build_py import build_py
-from setuptools.dist import Distribution
+# Checked first so an old interpreter gets this message instead of a confusing
+# build failure (the build requirement in pyproject.toml is kept low enough for
+# old pips to get this far). Keep this file valid Python 3.6 syntax.
+if sys.version_info < (3, 9):
+    sys.exit(
+        "Emucraft needs Python 3.9 or newer, but {} is Python {}.{}.{}.\n"
+        "Install a newer Python first; see 'Installing' in README.md.".format(
+            sys.executable, *sys.version_info[:3]))
+
+import shutil  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+from setuptools import setup  # noqa: E402
+from setuptools.command.build_py import build_py  # noqa: E402
+from setuptools.dist import Distribution  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent
 KERNEL = ROOT / "kernel" / "src"
