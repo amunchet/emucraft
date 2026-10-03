@@ -1,0 +1,31 @@
+[build-system]
+# Low floor on purpose: an old pip can then reach setup.py, which explains the
+# Python requirement. Current pips install a current setuptools anyway.
+requires = ["setuptools>=40.8.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "emucraft"
+dynamic = ["version"]
+description = "Fast G-code simulation, collision checking and feed optimization with a web (Three.js) viewer"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = ["tomli>=1.1; python_version < '3.11'"]
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[project.scripts]
+emucraft = "emucraft.cli:main"
+
+[tool.setuptools]
+packages = ["emucraft"]
+
+[tool.setuptools.dynamic]
+version = { attr = "emucraft.__version__" }
+
+[tool.setuptools.package-data]
+emucraft = ["web/*", "web/**/*", "_kernel/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
