@@ -1,0 +1,13 @@
+.git
+.armada
+.claude
+.vscode
+**/__pycache__
+**/*.so
+**/*.o
+**/_emukernel*
+venv*
+images
+*.stl
+*.block
+kernel/tests

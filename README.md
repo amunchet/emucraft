@@ -224,6 +224,41 @@ jobs:
         with: { name: emucraft-report, path: "report*.html" }
 ```
 
+## Web Deployment
+The `web/` folder holds a small Flask service: upload a G-code program, it runs the parser and the C kernel, and renders the resulting stock (plus toolpath) in the browser.  It also flags any rapid or spindle-off move that removed material.
+
+It has no authentication of its own - it's meant to sit behind a reverse proxy (Caddy) that handles that.
+
+The compose file joins an **external** Docker network (`emucraft` by default) and publishes no ports:
+
+```bash
+docker network create emucraft   # once, if your Caddy stack doesn't already create it
+docker compose up -d --build
+```
+
+Then, in the Caddy stack (attached to the same network):
+
+```
+emucraft.example.com {
+    # ...your auth...
+    reverse_proxy emucraft:8000
+}
+```
+
+The page uses relative URLs, so serving it under a path prefix (`handle_path /emucraft/* { reverse_proxy emucraft:8000 }`) works too.  Long programs simulate synchronously, so keep Caddy's upstream timeouts above `EMUCRAFT_TIMEOUT`.
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `EMUCRAFT_NETWORK` | `emucraft` | External Docker network to join |
+| `EMUCRAFT_RESOLUTION` | `5` | Default XY grid cell size, in thousandths of a program unit |
+| `EMUCRAFT_MAX_CELLS` | `2000` | Max grid cells per side; resolution is coarsened to fit (bounds memory use) |
+| `EMUCRAFT_TIMEOUT` | `300` | Seconds before a simulation is killed |
+| `EMUCRAFT_MAX_UPLOAD_MB` | `20` | Max upload size |
+
+Endpoints: `GET /` (UI), `GET /healthz`, `POST /api/simulate?resolution=N` (multipart `file`, or the raw G-code as the request body).
+
+Each simulation runs in a forked child process, so a kernel crash or memory leak can't take down the web worker.
+
 ## Performance
 
 Measured on a 4-core container:

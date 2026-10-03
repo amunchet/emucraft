@@ -1,0 +1,21 @@
+services:
+  emucraft:
+    build: .
+    image: emucraft:latest
+    container_name: emucraft
+    restart: unless-stopped
+    # No published ports - Caddy reaches this at http://emucraft:8000 over the shared network
+    expose:
+      - "8000"
+    environment:
+      EMUCRAFT_MAX_UPLOAD_MB: ${EMUCRAFT_MAX_UPLOAD_MB:-20}
+      EMUCRAFT_TIMEOUT: ${EMUCRAFT_TIMEOUT:-300}
+      EMUCRAFT_RESOLUTION: ${EMUCRAFT_RESOLUTION:-5}
+      EMUCRAFT_MAX_CELLS: ${EMUCRAFT_MAX_CELLS:-2000}
+    networks:
+      - emucraft
+
+networks:
+  emucraft:
+    external: true
+    name: ${EMUCRAFT_NETWORK:-emucraft}
