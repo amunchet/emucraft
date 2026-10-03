@@ -225,11 +225,9 @@ jobs:
 ```
 
 ## Web Deployment
-The `web/` folder holds a small Flask service: upload a G-code program, it runs the parser and the C kernel, and renders the resulting stock (plus toolpath) in the browser.  It also flags any rapid or spindle-off move that removed material.
+The Docker image runs the web viewer (`emucraft serve`) on port 8000.  It has no authentication of its own - it's meant to sit behind a reverse proxy (Caddy) that handles that.
 
-It has no authentication of its own - it's meant to sit behind a reverse proxy (Caddy) that handles that.
-
-The compose file joins an **external** Docker network (`emucraft` by default) and publishes no ports:
+The compose file joins an **external** Docker network (`emucraft` by default, override with `EMUCRAFT_NETWORK`) and publishes no ports:
 
 ```bash
 docker network create emucraft   # once, if your Caddy stack doesn't already create it
@@ -245,19 +243,9 @@ emucraft.example.com {
 }
 ```
 
-The page uses relative URLs, so serving it under a path prefix (`handle_path /emucraft/* { reverse_proxy emucraft:8000 }`) works too.  Long programs simulate synchronously, so keep Caddy's upstream timeouts above `EMUCRAFT_TIMEOUT`.
+Serve it at the root of a (sub)domain: the viewer calls `/api/...` with absolute paths, so a path prefix won't work.
 
-| Variable | Default | Description |
-| --- | --- | --- |
-| `EMUCRAFT_NETWORK` | `emucraft` | External Docker network to join |
-| `EMUCRAFT_RESOLUTION` | `5` | Default XY grid cell size, in thousandths of a program unit |
-| `EMUCRAFT_MAX_CELLS` | `2000` | Max grid cells per side; resolution is coarsened to fit (bounds memory use) |
-| `EMUCRAFT_TIMEOUT` | `300` | Seconds before a simulation is killed |
-| `EMUCRAFT_MAX_UPLOAD_MB` | `20` | Max upload size |
-
-Endpoints: `GET /` (UI), `GET /healthz`, `POST /api/simulate?resolution=N` (multipart `file`, or the raw G-code as the request body).
-
-Each simulation runs in a forked child process, so a kernel crash or memory leak can't take down the web worker.
+The viewer lists the bundled `examples/` plus anything in `/programs` inside the container; uncomment the volume in `docker-compose.yml` to mount your own folder (an `emucraft.toml` there is picked up as the default config).
 
 ## Performance
 

@@ -7,11 +7,9 @@ services:
     # No published ports - Caddy reaches this at http://emucraft:8000 over the shared network
     expose:
       - "8000"
-    environment:
-      EMUCRAFT_MAX_UPLOAD_MB: ${EMUCRAFT_MAX_UPLOAD_MB:-20}
-      EMUCRAFT_TIMEOUT: ${EMUCRAFT_TIMEOUT:-300}
-      EMUCRAFT_RESOLUTION: ${EMUCRAFT_RESOLUTION:-5}
-      EMUCRAFT_MAX_CELLS: ${EMUCRAFT_MAX_CELLS:-2000}
+    # Uncomment to list your own programs (and an emucraft.toml) in the viewer
+    # volumes:
+    #   - ./programs:/programs:ro
     networks:
       - emucraft
 
