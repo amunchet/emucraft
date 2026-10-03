@@ -119,10 +119,8 @@ def run(gcode, resolution=5, max_cells=2000, preview_size=256):
     nx = max(1, math.ceil((x_max - x_min) / resolution))
     ny = max(1, math.ceil((y_max - y_min) / resolution))
 
-    # NOTE: The kernel indexes BLOCK[x * BLOCK_X + y], which is only correct for square blocks
-    n = max(nx, ny)
     top = int(round(z_max - z_min))
-    block = np.full(n * n, top, dtype=np.intc)
+    block = np.full(nx * ny, top, dtype=np.intc)
     block_ptr = ffi.cast("int *", ffi.from_buffer(block))
 
     gx = np.rint((points[:, 0] - x_min) / resolution).astype(np.int64)
@@ -138,7 +136,7 @@ def run(gcode, resolution=5, max_cells=2000, preview_size=256):
     rapid_cuts = []
     rapid_cut_count = 0
     for i in np.nonzero(moved)[0]:
-        removed = lib.cut(block_ptr, int(gx[i]), int(gy[i]), int(gd[i]), int(gz[i]), n, n, ffi.NULL, 0)
+        removed = lib.cut(block_ptr, int(gx[i]), int(gy[i]), int(gd[i]), int(gz[i]), nx, ny, ffi.NULL, 0)
         removed_total += removed
         if removed > 0 and not cutting[i]:
             rapid_cut_count += 1
@@ -150,7 +148,7 @@ def run(gcode, resolution=5, max_cells=2000, preview_size=256):
                     "z": round(float(points[i, 2]) / MULTIPLIER, 4),
                 })
 
-    heights = block.reshape(n, n)[:nx, :ny]
+    heights = block.reshape(nx, ny)
     preview, fx, fy = _min_pool(heights, preview_size)
     cell = resolution / MULTIPLIER
 

@@ -64,6 +64,13 @@ Endpoints: `GET /` (UI), `GET /healthz`, `POST /api/simulate?resolution=N` (mult
 
 Each simulation runs in a forked child process, so a kernel crash or memory leak can't take down the web worker.
 
+## Testing
+All suites (kernel C tests, G-code parser, web service) run in a container, since the kernel needs a C compiler:
+
+```bash
+docker build -f Dockerfile.test -t emucraft-test . && docker run --rm emucraft-test
+```
+
 ## Performance
 So, using `numpy` turned out to be too slow even still.
 

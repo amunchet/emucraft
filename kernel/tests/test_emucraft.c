@@ -3,31 +3,20 @@
 #include <stdio.h>
 
 
-// Variables
-int DIM_X;
-int DIM_Y;
-
-int HEIGHT; // Max is Int16, which is ~30k or 30" in the real world
-
-int CUTTER_DIAMETER;  	
-int CUTTER_HEIGHT;
-int CUTTER_X;
-int CUTTER_Y;
-
-int* BLOCK;
+extern int* BLOCK; // Defined in functions.c
 
 
 // Sets up the variables
-DIM_X = 10;
-DIM_Y = 10;
+int DIM_X = 10;
+int DIM_Y = 10;
 
-HEIGHT = 1000; // Max is Int16, which is ~30k or 30" in the real world
+int HEIGHT = 1000; // Max is Int16, which is ~30k or 30" in the real world
 
-CUTTER_DIAMETER = 6;  	
-CUTTER_HEIGHT = 750;		
+int CUTTER_DIAMETER = 6;  	
+int CUTTER_HEIGHT = 750;		
 
-CUTTER_X = 5;
-CUTTER_Y = 5;
+int CUTTER_X = 5;
+int CUTTER_Y = 5;
 
 
 int check_correct_cut(int x,int y){
@@ -36,7 +25,7 @@ int check_correct_cut(int x,int y){
 
 	if(x < 0){
 		return -1;
-	}else if(x > DIM_X){
+	}else if(x >= DIM_X){
 		return -1;
 	}else{
 		temp_x = x;
@@ -44,14 +33,14 @@ int check_correct_cut(int x,int y){
 	
 	if(y < 0){
 		return -2;
-	}else if(y > DIM_Y){
+	}else if(y >= DIM_Y){
 		return -2;
 	}else{
 		temp_y = y;
 	}
-	printf("[check_correct_cut] Value of (%d, %d) is %d\n", x, y, BLOCK[temp_x * DIM_X + temp_y]);
+	printf("[check_correct_cut] Value of (%d, %d) is %d\n", x, y, BLOCK[temp_x * DIM_Y + temp_y]);
 	
-	return BLOCK[temp_x * DIM_X + temp_y];
+	return BLOCK[temp_x * DIM_Y + temp_y];
 }
 int test_setup(){
 
@@ -76,7 +65,7 @@ int test_cut(int expected){
 	printf("Starting up test_cut...");
 
 	
-	int success = cut(BLOCK, CUTTER_X, CUTTER_Y, CUTTER_DIAMETER, CUTTER_HEIGHT, DIM_X, DIM_Y, NULL, NULL);
+	int success = cut(BLOCK, CUTTER_X, CUTTER_Y, CUTTER_DIAMETER, CUTTER_HEIGHT, DIM_X, DIM_Y, NULL, 0);
 	if(success != expected){
 		printf("ERROR - block not cut properly: %d.  Expected: %d\n", success, expected);
 		return 1;
@@ -95,7 +84,7 @@ int test_correct_circle_boundary(){
 	}
 
 
-	int output = cut(BLOCK, CUTTER_X, CUTTER_Y, CUTTER_DIAMETER, CUTTER_HEIGHT, DIM_X, DIM_Y, NULL, NULL);
+	int output = cut(BLOCK, CUTTER_X, CUTTER_Y, CUTTER_DIAMETER, CUTTER_HEIGHT, DIM_X, DIM_Y, NULL, 0);
 	if(output == 0){
 		printf("ERROR - no cut was made\n");
 		return 1;
@@ -143,7 +132,7 @@ int test_correct_circle_boundary(){
 	y = CUTTER_Y;
 
 	if(check_correct_cut(x,y) != CUTTER_HEIGHT){
-		printf("ERROR - Top Right Boundary (%d, %d) not the right height: %d\n", x, y, BLOCK[x * DIM_X + y]);
+		printf("ERROR - Top Right Boundary (%d, %d) not the right height: %d\n", x, y, BLOCK[x * DIM_Y + y]);
 		return 1;
 	}
 	// Same as the Top Left
@@ -167,7 +156,7 @@ int test_correct_circle_boundary(){
 	x = CUTTER_X;
 
 	if(check_correct_cut(x,y) != CUTTER_HEIGHT){
-		printf("ERROR - Top Boundary (%d, %d) not the right height: %d\n", x, y, BLOCK[x * DIM_X + y]);
+		printf("ERROR - Top Boundary (%d, %d) not the right height: %d\n", x, y, BLOCK[x * DIM_Y + y]);
 		print_block(BLOCK, DIM_X, DIM_Y, 0, 0, 10);
 		return 1;
 	}
@@ -191,7 +180,7 @@ int test_correct_circle_boundary(){
 	y = CUTTER_Y + ceil(CUTTER_DIAMETER/2) - 1;
 
 	if(check_correct_cut(x,y) != CUTTER_HEIGHT){
-		printf("ERROR - Bottom Boundary (%d, %d) not the right height: %d\n", x,y, BLOCK[x * DIM_X + y]);
+		printf("ERROR - Bottom Boundary (%d, %d) not the right height: %d\n", x,y, BLOCK[x * DIM_Y + y]);
 		print_block(BLOCK, DIM_X, DIM_Y, 0, 0, 10);
 		return 1;
 	}
@@ -230,7 +219,7 @@ int test_correct_circle_boundary(){
 		}
 		
 		if(check_correct_cut(x,y) != CUTTER_HEIGHT){
-			printf("ERROR - Angle Boundary (%d, %d) not the right height: %d\n", x, y, BLOCK[x * DIM_X + y]);
+			printf("ERROR - Angle Boundary (%d, %d) not the right height: %d\n", x, y, BLOCK[x * DIM_Y + y]);
 			print_block(BLOCK, DIM_X, DIM_Y, x-5, y-5, 10);
 			return 1;
 		}
@@ -238,6 +227,49 @@ int test_correct_circle_boundary(){
 	}
 
 	
+	return 0;
+}
+
+int test_non_square(int dim_x, int dim_y, int cutter_x, int cutter_y){
+	/*
+		Cuts a non-square block and checks every cell: inside the cutter is cut,
+		everything else is untouched.  Cuts near the far corner so bad indexing
+		either lands on the wrong cell or runs off the end of the block.
+	*/
+	printf("Testing non-square block %d x %d, cut at (%d, %d)...\n", dim_x, dim_y, cutter_x, cutter_y);
+	int diameter = 6;
+	int height = 1000;
+	int depth = 750;
+
+	int *block = malloc((dim_x * dim_y) * sizeof(int));
+	for (int i=0; i<dim_x * dim_y; i++){
+		block[i] = height;
+	}
+
+	int removed = cut(block, cutter_x, cutter_y, diameter, depth, dim_x, dim_y, NULL, 0);
+
+	int expected_cells = 0;
+	for(int x = 0; x < dim_x; x++){
+		for(int y = 0; y < dim_y; y++){
+			int expected = check_distance(x, y, cutter_x, cutter_y, diameter) ? depth : height;
+			if(expected == depth){
+				expected_cells++;
+			}
+			if(block[x * dim_y + y] != expected){
+				printf("ERROR [Non-square] - (%d, %d) is %d, expected %d\n", x, y, block[x * dim_y + y], expected);
+				free(block);
+				return 1;
+			}
+		}
+	}
+
+	if(expected_cells == 0 || removed != expected_cells * (height - depth)){
+		printf("ERROR [Non-square] - removed %d, expected %d\n", removed, expected_cells * (height - depth));
+		free(block);
+		return 1;
+	}
+
+	free(block);
 	return 0;
 }
 
@@ -254,8 +286,8 @@ int main(){
 	// Test at Normal height
 	
 	output = test_cut(6250); // 6250 is the amount of material removed
-	if(BLOCK[5 * DIM_X + 5] != CUTTER_HEIGHT){
-		printf("ERROR - block not cut to right height.:%d\n", BLOCK[5 * DIM_X + 5]);
+	if(BLOCK[5 * DIM_Y + 5] != CUTTER_HEIGHT){
+		printf("ERROR - block not cut to right height.:%d\n", BLOCK[5 * DIM_Y + 5]);
 		return 1;
 	}
 	printf("Output of test_cut: %d\n", output);
@@ -270,9 +302,9 @@ int main(){
 
 	CUTTER_HEIGHT = 1100;
 
-	test_cut(0); // Expect 0 on an air cut
-	if(BLOCK[50 * DIM_X + 50] == CUTTER_HEIGHT){
-		printf("ERROR [Recut] - block not cut to right height.:%d\n", BLOCK[50 * DIM_X + 50]);
+	output = test_cut(0); // Expect 0 on an air cut
+	if(BLOCK[5 * DIM_Y + 5] != HEIGHT){
+		printf("ERROR [Recut] - air cut changed the block:%d\n", BLOCK[5 * DIM_Y + 5]);
 		return 1;
 	}
 	printf("Output of test_cut: %d\n", output);
@@ -301,6 +333,16 @@ int main(){
 		return output;
 	}
 	printf("Output of test correct circle boundary: %d\n", output);
+
+	// Non-square blocks, both orientations
+	if(test_non_square(20, 50, 17, 46) != 0){
+		return 1;
+	}
+	if(test_non_square(50, 20, 46, 17) != 0){
+		return 1;
+	}
+
+	printf("All tests passed\n");
 	return 0;
 }
 

@@ -239,7 +239,7 @@ class Program:
         # Check if the right types, if not, send through codes_parse
         # If that fails, throw an error
 
-        number_match = r"(-?(\d+.?)\d+(\.\d+)?)"
+        number_match = r"(-?(?:\d+\.?\d*|\.\d+))"
 
         matches = {
             r"Tool Holder Diameter: {}" : "tool_holder_diameter",

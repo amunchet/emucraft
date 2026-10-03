@@ -1,4 +1,5 @@
 # TODO
 
 ## Kernel
-- [ ] **Non-square blocks index out of bounds.** `cut()` and `write_block()` in `kernel/src/functions.c` (and `print_block()`) index the block as `BLOCK[x * DIM_X + y]`. For a row-major `DIM_X` x `DIM_Y` array the row stride is `DIM_Y`, so it should be `BLOCK[x * DIM_Y + y]`. Only square blocks work today, and a non-square block reads/writes past the end of the buffer. The kernel tests only use square blocks, so they don't catch it. The web service (`web/simulate.py`) works around this by padding the grid to a square; drop the padding once this is fixed.
+- [x] ~~**Non-square blocks index out of bounds.**~~ Fixed: `cut()`, `write_block()` and `print_block()` now index as `BLOCK[x * DIM_Y + y]`. Covered by `test_non_square` in `kernel/tests/test_emucraft.c` and `web/tests/test_simulate.py`.
+- [x] ~~**`process_from_file` misreads parser output.**~~ Fixed: reads the 7 column format (6 column files still work). Covered by `kernel/tests/test_file.c`.

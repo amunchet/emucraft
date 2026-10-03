@@ -1,0 +1,11 @@
+# Test image: builds the C kernel tests and the CFFI extension, then runs every suite
+#   docker build -f Dockerfile.test -t emucraft-test . && docker run --rm emucraft-test
+FROM python:3.12
+
+WORKDIR /app
+COPY web/requirements.txt web/requirements.txt
+RUN pip install --no-cache-dir pytest setuptools -r web/requirements.txt
+COPY . .
+RUN cd kernel/src && python cffi_builder.py
+
+CMD ["sh", "-c", "set -e; make -C kernel/tests test; cd gcode && python -m pytest -q tests; cd .. && python -m pytest -q web/tests"]

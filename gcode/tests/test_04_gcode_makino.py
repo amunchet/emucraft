@@ -143,6 +143,35 @@ def test_parse_comments(setup):
 
     assert setup.starting_point == (0,0,10)
 
+def test_parse_comments_short_numbers(setup):
+    """
+    Header values with a single digit, no leading zero, or a trailing decimal point
+    """
+    input = """
+    (Tool Holder Diameter: 8)
+    N290( DIAMETER: .375)
+    N120( MIN X: -2)
+    N130( MIN Y: 0)
+    N140( MIN Z: -1.)
+    N150( MAX X: 3)
+    N160( MAX Y: 4.)
+    N170( MAX Z: 1)
+    #128 = 2
+    #127 = .5
+    """
+    assert setup.parse_line(input)
+
+    assert setup.tool_holder_diameter == 8
+    assert setup.tool_diameter == 0.375
+    assert setup.tool_length == 2
+    assert setup.tool_holder_length == 0.5
+
+    assert setup.block == {
+        "x" : (-2, 3),
+        "y" : (0, 4),
+        "z" : (-1, 1)
+    }
+
 def test_g0_g1(setup):
     """
     Tests G0 (Rapid)

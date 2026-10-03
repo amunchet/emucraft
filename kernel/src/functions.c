@@ -30,7 +30,7 @@ void print_block(int *BLOCK, int DIM_X, int DIM_Y, int start_x, int start_y, int
 			}
 			if (y < DIM_Y && x < DIM_X && x >= 0 && y >= 0)
 			{
-				printf(" %d\t", BLOCK[x * DIM_X + y]);
+				printf(" %d\t", BLOCK[x * DIM_Y + y]);
 			}
 		}
 
@@ -121,7 +121,7 @@ int cut(int *BLOCK, int CUTTER_X, int CUTTER_Y, int CUTTER_DIAMETER, int CUTTER_
 
 	int difference = 0;
 
-	FILE *fp;
+	FILE *fp = NULL;
 	if(delta_filename != NULL){
 		printf("Writing to %s\n", delta_filename);
 		fp = fopen(delta_filename, "a");
@@ -131,15 +131,15 @@ int cut(int *BLOCK, int CUTTER_X, int CUTTER_Y, int CUTTER_DIAMETER, int CUTTER_
 	{
 		for (int y = min_y; y < max_y; y++)
 		{
-			if (check_distance(x, y, CUTTER_X, CUTTER_Y, CUTTER_DIAMETER) && BLOCK[x * BLOCK_X + y] > CUTTER_HEIGHT)
+			if (check_distance(x, y, CUTTER_X, CUTTER_Y, CUTTER_DIAMETER) && BLOCK[x * BLOCK_Y + y] > CUTTER_HEIGHT)
 			{
-				difference = BLOCK[x * BLOCK_X + y] - CUTTER_HEIGHT;
+				difference = BLOCK[x * BLOCK_Y + y] - CUTTER_HEIGHT;
 				// printf("[Cut] Difference: %d\n", difference);
 				total_removed += difference;
-				BLOCK[x * BLOCK_X + y] = CUTTER_HEIGHT;
+				BLOCK[x * BLOCK_Y + y] = CUTTER_HEIGHT;
 				cube_count += 1;
 
-				if(delta_filename != NULL){
+				if(fp != NULL){
 					fprintf(fp, "%d %d %d %d\n", delta_count, x, y, CUTTER_HEIGHT);
 				}
 
@@ -147,7 +147,7 @@ int cut(int *BLOCK, int CUTTER_X, int CUTTER_Y, int CUTTER_DIAMETER, int CUTTER_
 		}
 	}
 	
-	if(delta_filename != NULL){
+	if(fp != NULL){
 		fclose(fp);
 	}
 
@@ -163,7 +163,7 @@ int write_block(int *BLOCK, int DIM_X, int DIM_Y, char *filename)
 	{
 		for (int y = 0; y < DIM_Y; y++)
 		{
-			fprintf(fp, "%d ", BLOCK[x * DIM_X + y]);
+			fprintf(fp, "%d ", BLOCK[x * DIM_Y + y]);
 		}
 		fprintf(fp, "\n");
 	}
@@ -188,33 +188,39 @@ int process_from_file(int *BLOCK, int DIM_X, int DIM_Y, char *filename)
 
 	*/
 
-	int x, y, z, cutter_diameter, tool_holder_diameter, tool_holder_z;
+	int x, y, z, cutter_diameter, tool_holder_diameter, tool_holder_z, move_type;
 
 	FILE *fp = fopen(filename, "r");
-	
-	assert(fp != NULL);
+	if(fp == NULL){
+		printf("Could not open %s\n", filename);
+		return -1;
+	}
 
 	char output_filename[512];
-	sprintf(output_filename, "%s.sim", filename);
+	snprintf(output_filename, sizeof(output_filename), "%s.sim", filename);
 	printf("Output filename: %s\n", output_filename);
 
-
+	char line[256];
 	int line_count = 0;
-	while(EOF != fscanf(fp, "%d %d %d %d %d %d\n", &x, &y, &z, &cutter_diameter, &tool_holder_diameter, &tool_holder_z)){
-		printf("%d %d %d %d %d %d\n", x, y, z, cutter_diameter, tool_holder_diameter, tool_holder_z);
+	while(fgets(line, sizeof(line), fp) != NULL){
+		// MOVE TYPE is optional for older 6 column files - treat those as cutting moves
+		move_type = 1;
+		int fields = sscanf(line, "%d %d %d %d %d %d %d", &x, &y, &z, &cutter_diameter, &tool_holder_diameter, &tool_holder_z, &move_type);
+		if(fields < 6){
+			continue; // Blank or malformed line
+		}
+		printf("%d %d %d %d %d %d %d\n", x, y, z, cutter_diameter, tool_holder_diameter, tool_holder_z, move_type);
 
 		cut(BLOCK, x, y, cutter_diameter, z, DIM_X, DIM_Y, output_filename, line_count);
-		// TODO: Check for non-cutting cut
+		// TODO: Check for non-cutting cut (move_type == 0 that removes material)
 		
 		// TODO: Second cut for checking (spindle collision)
 		
 		line_count++;
 	}
 
-	// Clean up any extra delta lines
 	fclose(fp);
 
-	
 	return 1;
 }
 
