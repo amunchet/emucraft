@@ -30,7 +30,7 @@ void print_block(int *BLOCK, int DIM_X, int DIM_Y, int start_x, int start_y, int
 			}
 			if (y < DIM_Y && x < DIM_X && x >= 0 && y >= 0)
 			{
-				printf(" %d\t", BLOCK[x * DIM_X + y]);
+				printf(" %d\t", BLOCK[x * DIM_Y + y]);
 			}
 		}
 
@@ -131,12 +131,12 @@ int cut(int *BLOCK, int CUTTER_X, int CUTTER_Y, int CUTTER_DIAMETER, int CUTTER_
 	{
 		for (int y = min_y; y < max_y; y++)
 		{
-			if (check_distance(x, y, CUTTER_X, CUTTER_Y, CUTTER_DIAMETER) && BLOCK[x * BLOCK_X + y] > CUTTER_HEIGHT)
+			if (check_distance(x, y, CUTTER_X, CUTTER_Y, CUTTER_DIAMETER) && BLOCK[x * BLOCK_Y + y] > CUTTER_HEIGHT)
 			{
-				difference = BLOCK[x * BLOCK_X + y] - CUTTER_HEIGHT;
+				difference = BLOCK[x * BLOCK_Y + y] - CUTTER_HEIGHT;
 				// printf("[Cut] Difference: %d\n", difference);
 				total_removed += difference;
-				BLOCK[x * BLOCK_X + y] = CUTTER_HEIGHT;
+				BLOCK[x * BLOCK_Y + y] = CUTTER_HEIGHT;
 				cube_count += 1;
 
 				if(delta_filename != NULL){
@@ -163,7 +163,7 @@ int write_block(int *BLOCK, int DIM_X, int DIM_Y, char *filename)
 	{
 		for (int y = 0; y < DIM_Y; y++)
 		{
-			fprintf(fp, "%d ", BLOCK[x * DIM_X + y]);
+			fprintf(fp, "%d ", BLOCK[x * DIM_Y + y]);
 		}
 		fprintf(fp, "\n");
 	}

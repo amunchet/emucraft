@@ -3,6 +3,7 @@
 G-code parser
 """
 import re
+from difflib import SequenceMatcher
 
 import arc
 import linear
@@ -12,6 +13,91 @@ from gcode_logger import logger
 # Exceptions
 class NotImplementedException(Exception):
     pass
+
+
+NUMBER = r"-?(?:\d+\.?\d*|\.\d+)"
+
+# Comment detection settings
+#   labels   - aliases for `(LABEL: value)` comments, matched case-insensitively and fuzzily
+#   patterns - raw regexes on the full line, `{num}` marks the value (e.g. macro variables)
+#   fuzz_threshold - minimum similarity (0-1) for a label typo to still count
+#   units    - program units; values with an `mm`/`in` suffix are converted to these
+DEFAULT_DETECTION = {
+    "fuzz_threshold": 0.85,
+    "units": "in",
+    "labels": {
+        "tool_holder_diameter": ["tool holder diameter", "tool holder dia", "holder diameter", "holder dia"],
+        "tool_holder_length": ["tool holder length", "holder length"],
+        "tool_diameter": ["diameter", "tool diameter", "cutter diameter", "tool dia", "cutter dia", "dia"],
+        "tool_length": ["tool length", "stickout", "stick out", "tool stickout"],
+        "cutting_length": ["cutting length", "flute length", "length of cut", "loc", "cut length"],
+        "shank_diameter": ["shank diameter", "shank dia", "shank"],
+        "gauge_length": ["gauge length"],
+        "block_x_min": ["min x", "x min"],
+        "block_x_max": ["max x", "x max"],
+        "block_y_min": ["min y", "y min"],
+        "block_y_max": ["max y", "y max"],
+        "block_z_min": ["min z", "z min"],
+        "block_z_max": ["max z", "z max"],
+    },
+    "patterns": {
+        "tool_holder_length": [r"#127\s*=\s*{num}"],
+        "tool_length": [r"#128\s*=\s*{num}"],
+    },
+}
+
+
+def normalize_label(label):
+    """
+    Lowercases and collapses punctuation/whitespace so labels compare cleanly
+    """
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", label.lower()).split())
+
+
+def detect_comment(line, settings):
+    """
+    Finds tooling and block values in a single line using the detection settings
+
+    Returns [(field, value, how)] where `how` describes what matched
+    """
+    found = []
+    for field, patterns in settings["patterns"].items():
+        for pattern in patterns:
+            x = re.search(pattern.replace("{num}", f"({NUMBER})"), line, re.IGNORECASE)
+            if x is not None:
+                found.append((field, float(x.group(1)), f"pattern {pattern}"))
+
+    comments = re.findall(r"\(([^()]*)\)", line) + re.findall(r";(.*)$", line)
+    for comment in comments:
+        x = re.match(
+            rf"\s*([A-Za-z][A-Za-z _\-/.]*?)\s*[:=]?\s*({NUMBER})\s*(mm|inches|inch|in|\")?(?![A-Za-z0-9])",
+            comment,
+            re.IGNORECASE,
+        )
+        if x is None:
+            continue
+
+        label = normalize_label(x.group(1))
+        best_field, best_score = None, 0
+        for field, aliases in settings["labels"].items():
+            for alias in aliases:
+                score = SequenceMatcher(None, label, normalize_label(alias)).ratio()
+                if score > best_score:
+                    best_field, best_score = field, score
+
+        if best_score < settings["fuzz_threshold"]:
+            continue
+
+        value = float(x.group(2))
+        unit = (x.group(3) or "").lower()
+        if unit == "mm" and settings["units"] == "in":
+            value /= 25.4
+        elif unit and unit != "mm" and settings["units"] == "mm":
+            value *= 25.4
+
+        found.append((best_field, value, f"label '{x.group(1).strip()}' ({best_score:.2f})"))
+
+    return found
 
 
 # Helpers
@@ -48,16 +134,22 @@ def codes_parse(gcode):
     logger.debug(f"Codes:{codes}")
     return codes
 class Program:
-    def __init__(self):
+    def __init__(self, detection=None):
         """
         Initialize Program Instance
+
+        detection - comment detection settings (see DEFAULT_DETECTION)
         """
-        lines = []
+        self.detection = detection or DEFAULT_DETECTION
+        self.detections = {} # field -> {"value", "line", "how"} of the last match
 
         self.tool_holder_diameter = 0
         self.tool_holder_length = 0
         self.tool_diameter = 0
         self.tool_length = 0
+        self.cutting_length = 0
+        self.shank_diameter = 0
+        self.gauge_length = 0
 
         self.block = None
         self.block_offsets = None
@@ -74,6 +166,7 @@ class Program:
         self.block_z_max = 0
 
         self.lines = []
+        self.sources = [] # G-code line that produced each entry of `lines`
         self.current = {
             "G" : [],
             "M" : [],
@@ -236,45 +329,14 @@ class Program:
 
         
 
-        # Check if the right types, if not, send through codes_parse
-        # If that fails, throw an error
-
-        number_match = r"(-?(\d+.?)\d+(\.\d+)?)"
-
-        matches = {
-            r"Tool Holder Diameter: {}" : "tool_holder_diameter",
-            r"#127\s*=\s*{}" : "tool_holder_length",
-            r"DIAMETER:\s*{}" : "tool_diameter",
-            r"#128\s*=\s*{}" : "tool_length",
-            r"MIN\s*X\s*:\s*{}" : "block_x_min",
-            r"MAX\s*X\s*:\s*{}" : "block_x_max",
-
-            r"MIN\s*Y\s*:\s*{}" : "block_y_min",
-            r"MAX\s*Y\s*:\s*{}" : "block_y_max",
-
-            r"MIN\s*Z\s*:\s*{}" : "block_z_min",
-            r"MAX\s*Z\s*:\s*{}" : "block_z_max",
-        }        
-
         # TODO: We might have to put the first point back in
 
         for line in [x.strip() for x in lines.split("\n") if x.strip() != ""]:
             logger.debug(f"Line:{line}")
 
-
-            # Update the Current matches
-            for match in matches:
-                x = re.search(match.format(number_match), line)
-                if x is not None:
-                    logger.info(x.group(1))
-
-                    try:
-                        output = float(x.group(1))
-                    except Exception:
-                        output = x.group(1)
-                    
-                    setattr(self, matches[match], output)
-        
+            for (field, value, how) in detect_comment(line, self.detection):
+                setattr(self, field, value)
+                self.detections[field] = {"value": value, "line": line, "how": how}
 
             # Get the current codes 
             current_codes = codes_parse(line)[0]
@@ -282,7 +344,7 @@ class Program:
             # Run Motion parsing function
 
             if ("M", 30) in current_codes:
-                return True
+                break
 
             # Check spindle on
             if ("M", 5) in current_codes:
@@ -297,7 +359,10 @@ class Program:
                 current_codes.append(("G", 1))
                 temp_g1 = True
 
+            count = len(self.lines)
             self.motion_parse(line, current_codes)
+            if len(self.lines) > count:
+                self.sources.append(line)
 
             if temp_g1:
                 current_codes = [x for x in current_codes if x != ("G", 1)]

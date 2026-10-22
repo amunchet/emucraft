@@ -18,7 +18,38 @@ Key improvements over Emu:
 - Full tests and coverage
 - Easy API
 
+## MCP Server
+`mcp_server.py` exposes Emucraft to a generative CAM pipeline over MCP (stdio):
+
+```bash
+pip install -r requirements.txt
+python3 mcp_server.py
+```
+
+```json
+{"mcpServers": {"emucraft": {"command": "python3", "args": ["/path/to/Emucraft/mcp_server.py"]}}}
+```
+
+Tools:
+- `analyze_program` - tooling and block values detected from comments (with the line and match for each), fields that were missing, move/point counts
+- `simulate` - builds and runs the C kernel over the stock block and reports a collision for any material removed by a rapid (G0) or spindle-off move.  `resolution` sets the grid size (default 0.01").  Needs a C compiler (`cc`, or set `EMUCRAFT_CC`)
+- `generate_xyz` - writes the XYZ file for a program
+- `test_detection`, `get_detection_settings`, `update_detection_settings`, `reset_detection_settings` - tune comment detection
+
+Programs are passed as a file `path` or inline `gcode`.
+
+### Comment detection
+Tooling and stock come from program comments.  Detected fields: `tool_holder_diameter`, `tool_holder_length`, `tool_diameter`, `tool_length`, `cutting_length`, `shank_diameter`, `gauge_length` and `block_{x,y,z}_{min,max}`.
+
+Each field has:
+- **labels** - aliases matched against `(LABEL: value)` / `(LABEL = value)` / `; LABEL value` comments.  Case, punctuation and spacing are ignored, and typos are accepted down to `fuzz_threshold` similarity (default 0.85, so `GUAGE LENGTH` still matches `gauge length`; set 1.0 for exact only)
+- **patterns** - regexes run on the whole line with `{num}` where the value is, e.g. `#127\s*=\s*{num}` for macro variables
+
+Values with an explicit `mm` / `in` suffix are converted to `units` (default `in`).  The last match in a program wins.  Settings are saved to `detection.json` in the repo root (override with `EMUCRAFT_DETECTION`) and layered over the defaults in `gcode/gcode_parser.py`.
+
 ## KNOWN ISSUES
+- The kernel only models the cutter, so `simulate` catches rapid/spindle-off moves into stock but not tool holder or shank collisions yet.  Holder, shank and cutting length are detected and reported for when it does.
+
 - Helical interpolation is lazy - we need to ensure it checks at the lowest Z value (i.e., the destination) and not anywhere else.  Right now, the helical interpolation is only being applied in X and Y.  This shouldn't matter for normal 3 axis verifications, but it's worth noting.
 
 ## Roadmap
