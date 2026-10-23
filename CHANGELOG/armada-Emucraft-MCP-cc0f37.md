@@ -19,3 +19,6 @@ Fixes found along the way:
 
 ## 2026-10-22 20:33 CDT
 Self-review found that this branch was built on a stale `master`. Current `master` replaced `gcode_parser.py` and the prototype kernel with the `emucraft/` package, so the branch conflicts and is not shipped. The MCP server and fuzzy detection need porting onto `emucraft`, pending a decision.
+
+## 2026-10-23 00:20 CDT
+Merged current `master` and dropped the prototype-based work. Comment detection in `emucraft/gcode.py` now has a label-alias fallback. A `(label: value)` comment that no rule matched is read when its label is close to a known alias. This catches typos and variants for holder diameter and length, stickout, flute/cutting length, shank, diameter and stock. Short aliases must match exactly, and a loose match is reported as a `comment-label` info message. It is configurable through `[comment_aliases]` and `[check] fuzz_threshold`. Lengths written with `mm`/`in`/`"` are converted once the program's units are known. Detection on the bundled examples is unchanged.

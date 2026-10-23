@@ -90,6 +90,9 @@ def test_find_config(tmp_path):
     ({"comment_rules": [{"pattern": "D=([\\d.]+)", "field": "tool.colour"}]}, "cannot store"),
     ({"variable_rules": {"abc": "tool.stickout"}}, "not a macro variable"),
     ({"variable_rules": {"#127": "stock.volume"}}, "cannot store"),
+    ({"comment_aliases": {"tool.name": ["tool id"]}}, "cannot store"),
+    ({"comment_aliases": {"tool.diameter": "dia"}}, "list of labels"),
+    ({"check": {"fuzz_threshold": 1.5}}, "between 0 and 1"),
 ])
 def test_config_validation(data, message):
     with pytest.raises(ConfigError, match=message.replace("(", r"\(").replace(")", r"\)")):
@@ -113,6 +116,18 @@ def test_config_rules_reach_the_interpreter():
     # #140 was set first, the default #128 rule then wins for the stick-out
     program = parse_program("T2 M6\n#128 = 1.1\n#140 = 2.5\n", "p", cfg)
     assert program.tool_notes[2].values["stickout"] == 2.5
+
+
+def test_config_aliases_reach_the_interpreter():
+    cfg = config_from_dict({
+        "comment_aliases": {"tool.holder_length": ["gauge from holder"]},
+        "check": {"fuzz_threshold": 0.95},
+    })
+    program = parse_program("T2 M6\n(GAUGE FROM HOLDER: 3.5)\n(HOLDER LENGTH: 9)\n(SHNK DIAMTR: .5)\n", "p", cfg)
+    # HOLDER LENGTH still comes from its comment rule; SHNK DIAMTR (0.88) is below 0.95
+    assert program.tool_notes[2].values == {"holder_length": 9.0}
+    program = parse_program("T2 M6\n(GAUGE FROM HOLDER: 3.5)\n", "p", cfg)
+    assert program.tool_notes[2].values == {"holder_length": 3.5}
 
 
 # ------------------------------------------------------------------ model

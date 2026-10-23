@@ -167,6 +167,11 @@ def interpreter_for(config: Config) -> Interpreter:
         from .gcode import DEFAULT_COMMENT_RULES
 
         rules = list(config.comment_rules) + list(DEFAULT_COMMENT_RULES)
+    aliases = None
+    if config.comment_aliases:
+        from .gcode import DEFAULT_LABEL_ALIASES
+
+        aliases = {**DEFAULT_LABEL_ALIASES, **config.comment_aliases}
     variables = None
     if config.variable_rules:
         from .gcode import DEFAULT_VARIABLE_RULES
@@ -184,6 +189,8 @@ def interpreter_for(config: Config) -> Interpreter:
         tool_radius=tool_radius,
         comment_rules=rules,
         variable_rules=variables,
+        label_aliases=aliases,
+        fuzz_threshold=chk.fuzz_threshold,
         stock_top=stock_top,
         option_units=config.units,
     )

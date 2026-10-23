@@ -30,6 +30,9 @@ Example (all sections optional)::
     [[comment_rules]]         # extra CAM comment patterns
     pattern = 'HOLDER DIA\\s*=\\s*([-+]?[\\d.]+)'
     field = "tool.holder_diameter"
+
+    [comment_aliases]         # "(label: value)" labels, matched loosely
+    "tool.holder_length" = ["holder length", "gauge from holder"]
 """
 
 from __future__ import annotations
@@ -40,6 +43,7 @@ from dataclasses import fields
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
 
+from .gcode import DEFAULT_LABEL_ALIASES
 from .model import CheckSpec, Config, MachineSpec, StockSpec
 
 try:  # Python 3.11+
@@ -109,6 +113,7 @@ _CHECK_RULES = {
     "units": _optional(_UNITS),
     "default_units": _UNITS,
     "threads": _optional(_POSITIVE_INT),
+    "fuzz_threshold": ("a number between 0 and 1", lambda v: _number(v) and 0 <= v <= 1),
 }
 _TOOL_RULES = {
     "diameter": _POSITIVE,
@@ -131,6 +136,8 @@ _RULE_TARGETS = (
     | {f"stock.{axis}{end}" for axis in "xyz" for end in ("min", "max")}
     | {"program.units", "program.tool_point"}
 )
+# label aliases only carry numbers: the same targets as the defaults
+_ALIAS_TARGETS = set(DEFAULT_LABEL_ALIASES)
 
 
 def _validate(section: str, obj, rules) -> None:
@@ -157,7 +164,7 @@ def _rule_target(section: str, target) -> str:
 
 def config_from_dict(data: Dict[str, Any]) -> Config:
     top = {"units", "machine", "check", "stock", "tools", "default_tool", "optimize",
-           "comment_rules", "variable_rules"}
+           "comment_rules", "variable_rules", "comment_aliases"}
     _check_keys("top level", data, top)
     cfg = Config()
     units = data.get("units")
@@ -225,6 +232,16 @@ def config_from_dict(data: Dict[str, Any]) -> Config:
             except ValueError:
                 raise ConfigError(f"[variable_rules] '{key}' is not a macro variable number") from None
             cfg.variable_rules[number] = _rule_target("variable_rules", target)
+        aliases = data.get("comment_aliases") or {}
+        if not isinstance(aliases, dict):
+            raise ConfigError('[comment_aliases] must be a table like { "tool.holder_length" = ["holder length"] }')
+        for target, names in aliases.items():
+            if target not in _ALIAS_TARGETS:
+                raise ConfigError(f"[comment_aliases] cannot store into '{target}' "
+                                  f"(use one of: {', '.join(sorted(_ALIAS_TARGETS))})")
+            if not (isinstance(names, list) and all(isinstance(n, str) and n.strip() for n in names)):
+                raise ConfigError(f"[comment_aliases] {target} must be a list of labels")
+            cfg.comment_aliases[target] = list(names)
     except TypeError as exc:
         raise ConfigError(str(exc)) from None
     return cfg
