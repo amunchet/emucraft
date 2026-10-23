@@ -16,3 +16,6 @@ Fixes found along the way:
 - The block was never set for programs ending in `M30`, because the helpers were skipped.
 - The number regex rejected values like `.375` and `5`.
 - The kernel indexed rows by `DIM_X` instead of `DIM_Y`, which corrupted non-square blocks.
+
+## 2026-10-22 20:33 CDT
+Self-review found that this branch was built on a stale `master`. Current `master` replaced `gcode_parser.py` and the prototype kernel with the `emucraft/` package, so the branch conflicts and is not shipped. The MCP server and fuzzy detection need porting onto `emucraft`, pending a decision.
