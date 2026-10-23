@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.9", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Kernel unit tests
+        run: make -C kernel native test
+      - name: Install
+        run: pip install -e ".[dev]"
+      - name: Python tests (includes WebAssembly/native parity)
+        run: python -m pytest -q
+      - name: Check the examples
+        run: |
+          emucraft check examples/makino_roughing.nc examples/pocket_corners.nc --junit junit.xml --html report.html
+          emucraft check examples/crash_demo.nc -q && exit 1 || test $? -eq 1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: emucraft-reports
+          path: |
+            junit.xml
+            report*.html
