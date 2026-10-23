@@ -30,3 +30,6 @@ Added `emucraft mcp`, an MCP server (stdio) for the generative CAM pipeline, ava
 - `get_settings`, `update_settings`, `reset_settings`: tune detection and tool defaults in a saved emucraft JSON config.
 
 CI now installs the extra, so the MCP tests run on Python 3.12. The README documents the server and comment detection.
+
+## 2026-10-23 00:21 CDT
+Removed the reversed `Z MIN`-style stock aliases. Posts use those labels for toolpath extents, which would otherwise overwrite the stock box.

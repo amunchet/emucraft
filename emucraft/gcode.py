@@ -163,7 +163,8 @@ DEFAULT_COMMENT_RULES: List[Tuple[str, str]] = [
 
 # Fallback for comments no rule matched: "(<label>[:=] <number>[unit])" whose
 # label is close to one of these aliases (see _label_note). Aliases shorter
-# than FUZZY_MIN_ALIAS characters must match exactly.
+# than FUZZY_MIN_ALIAS characters must match exactly. No "Z MIN" style stock
+# labels: posts use those for toolpath extents, not the stock.
 DEFAULT_LABEL_ALIASES: Dict[str, List[str]] = {
     "tool.diameter": ["diameter", "tool diameter", "cutter diameter", "tool dia", "cutter dia", "dia"],
     "tool.corner_radius": ["corner radius", "tip radius", "corner rad"],
@@ -173,12 +174,12 @@ DEFAULT_LABEL_ALIASES: Dict[str, List[str]] = {
     "tool.stickout": ["stickout", "stick out", "tool stickout", "overhang"],
     "tool.holder_diameter": ["tool holder diameter", "holder diameter", "tool holder dia", "holder dia"],
     "tool.holder_length": ["tool holder length", "holder length"],
-    "stock.xmin": ["min x", "x min", "stock min x"],
-    "stock.ymin": ["min y", "y min", "stock min y"],
-    "stock.zmin": ["min z", "z min", "stock min z"],
-    "stock.xmax": ["max x", "x max", "stock max x"],
-    "stock.ymax": ["max y", "y max", "stock max y"],
-    "stock.zmax": ["max z", "z max", "stock max z"],
+    "stock.xmin": ["min x", "stock min x"],
+    "stock.ymin": ["min y", "stock min y"],
+    "stock.zmin": ["min z", "stock min z"],
+    "stock.xmax": ["max x", "stock max x"],
+    "stock.ymax": ["max y", "stock max y"],
+    "stock.zmax": ["max z", "stock max z"],
 }
 DEFAULT_FUZZ_THRESHOLD = 0.85
 FUZZY_MIN_ALIAS = 5

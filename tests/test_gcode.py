@@ -211,7 +211,7 @@ def test_label_aliases_forgive_typos_and_variants():
 def test_label_aliases_do_not_cross_match():
     p = parse(
         "T4 M6\n(LOCK: 1)\n(STEPOVER: 0.125)\n(TOLERANCE:0.0003)\n(Gauge Length: 5.2)\n"
-        "(MAX X: 1.0)\n(Number of Flutes: 3)\n"
+        "(MAX X: 1.0)\n(Number of Flutes: 3)\n(Z MIN: -1.25)\n(ZMIN=-0.5)\n"
     )
     assert p.tool_notes[4].values == {"flutes": 3}
     assert p.stock_note == {"xmax": 1.0}
