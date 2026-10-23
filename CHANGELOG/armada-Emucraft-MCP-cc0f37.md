@@ -22,3 +22,11 @@ Self-review found that this branch was built on a stale `master`. Current `maste
 
 ## 2026-10-23 00:20 CDT
 Merged current `master` and dropped the prototype-based work. Comment detection in `emucraft/gcode.py` now has a label-alias fallback. A `(label: value)` comment that no rule matched is read when its label is close to a known alias. This catches typos and variants for holder diameter and length, stickout, flute/cutting length, shank, diameter and stock. Short aliases must match exactly, and a loose match is reported as a `comment-label` info message. It is configurable through `[comment_aliases]` and `[check] fuzz_threshold`. Lengths written with `mm`/`in`/`"` are converted once the program's units are known. Detection on the bundled examples is unchanged.
+
+## 2026-10-23 00:20 CDT
+Added `emucraft mcp`, an MCP server (stdio) for the generative CAM pipeline, available through the optional `mcp` extra (Python 3.10+). Tools:
+- `check_program`: a full collision check with stock, tool and resolution overrides.
+- `program_info`: what was detected, with the line and text for each value.
+- `get_settings`, `update_settings`, `reset_settings`: tune detection and tool defaults in a saved emucraft JSON config.
+
+CI now installs the extra, so the MCP tests run on Python 3.12. The README documents the server and comment detection.
