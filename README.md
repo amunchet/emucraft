@@ -269,6 +269,8 @@ Model (`laser/src/sim.js`):
 - The focal plane sits at the highest point under the footprint, plus the focus offset.
 - Passes are simulated in up to 24 steps. In each step every cell removes `max(0, grey · power/max · (spot/d)² − threshold) / (1 − threshold) · depth_per_pass`. That removal is spread by a Gaussian with σ = d/4, using the cell's own current defocus. Deeper cuts therefore grow wider, shallower and fuzzier.
 
+Sample: `laser/samples/` has a parametric full-size 1911 grip panel (`node make_1911_grip.mjs` writes `1911_grip.stl`) and a full-coverage design that bleeds past the panel edges (`1911_grip_design.png`, drawn by `make_1911_bitmap.mjs`, which needs playwright and a Chromium). Load both, then set W = 47 mm (aspect locked), X = Y = 0.125 and angle 0 to line the design up with the panel.
+
 Limitations and next steps: STEP/IGES import (would need occt-import-js), lasers that don't fire straight down or rotary axes, heightmap export, and splitting the 720 kB bundle into smaller chunks.
 
 ## Performance
