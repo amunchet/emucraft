@@ -1,0 +1,19 @@
+services:
+  emucraft:
+    build: .
+    image: emucraft:latest
+    container_name: emucraft
+    restart: unless-stopped
+    # No published ports - Caddy reaches this at http://emucraft:8000 over the shared network
+    expose:
+      - "8000"
+    # Uncomment to list your own programs (and an emucraft.toml) in the viewer
+    # volumes:
+    #   - ./programs:/programs:ro
+    networks:
+      - emucraft
+
+networks:
+  emucraft:
+    external: true
+    name: ${EMUCRAFT_NETWORK:-emucraft}

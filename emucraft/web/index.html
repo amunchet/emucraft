@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Emucraft</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M6 22 16 4l10 18-10 6z' fill='%234cc2ff'/%3E%3Cpath d='m16 4 10 18-10 6z' fill='%231f7fb8'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/app.css">
+<script type="importmap">
+{ "imports": {
+  "three": "./vendor/three/three.module.min.js",
+  "three/addons/controls/OrbitControls.js": "./vendor/three/OrbitControls.min.js"
+} }
+</script>
+<script type="module" src="js/main.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M6 22 16 4l10 18-10 6z"/><path d="m16 4 10 18-10 6z" class="shade"/></svg>Emucraft</div>
+  <div class="file-controls">
+    <button id="open-btn" class="btn" title="Open a G-code file (or drop one anywhere)">Open…</button>
+    <input type="file" id="file-input" hidden>
+    <select id="program-select" class="select" aria-label="Example programs"></select>
+  </div>
+  <div class="file-name" id="file-name"></div>
+  <div class="badge" id="status-badge" hidden></div>
+  <div class="spacer"></div>
+  <div class="muted small" id="timing"></div>
+  <button id="panel-toggle" class="btn icon" title="Show or hide the side panels" aria-label="Toggle panels">
+    <svg viewBox="0 0 20 20"><path d="M3 4h14v12H3z M8 4v12" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+  </button>
+</header>
+
+<main class="layout" id="layout">
+  <aside class="panel left" id="code-panel">
+    <div class="panel-head"><span>Program</span><span class="muted" id="line-count"></span></div>
+    <div class="code" id="code" tabindex="0" aria-label="G-code listing"></div>
+  </aside>
+
+  <section class="viewport" id="viewport">
+    <canvas id="canvas"></canvas>
+    <div class="view-tools">
+      <div class="seg">
+        <button data-view="iso" title="Isometric view (1)">Iso</button>
+        <button data-view="top" title="Top view (2)">Top</button>
+        <button data-view="front" title="Front view (3)">Front</button>
+        <button data-view="right" title="Right view (4)">Right</button>
+        <button data-view="fit" title="Fit (F)">Fit</button>
+      </div>
+      <div class="seg toggles">
+        <label title="Stock"><input type="checkbox" id="show-stock" checked>Stock</label>
+        <label title="Toolpath"><input type="checkbox" id="show-path" checked>Path</label>
+        <label title="Rapid moves"><input type="checkbox" id="show-rapids" checked>Rapids</label>
+        <label title="Tool and holder"><input type="checkbox" id="show-tool" checked>Tool</label>
+      </div>
+      <div class="seg">
+        <select id="stock-color" class="select" title="Stock coloring">
+          <option value="material">Material</option>
+          <option value="tool">By tool</option>
+          <option value="depth">Depth</option>
+          <option value="recent">Current move</option>
+        </select>
+        <select id="path-color" class="select" title="Toolpath coloring">
+          <option value="type">Move type</option>
+          <option value="feed">Feed rate</option>
+          <option value="load">Removal rate</option>
+          <option value="optimized" disabled>Optimized feed</option>
+        </select>
+      </div>
+    </div>
+    <div class="hud" id="hud"></div>
+    <div class="legend" id="legend"></div>
+    <div class="progress" id="progress" hidden><div class="bar"></div><span></span></div>
+    <div class="empty" id="empty">
+      <h1>Drop a G-code program here</h1>
+      <p>or pick an example above. Emucraft simulates the stock, checks rapids, spindle state, flute length, shank, holder and table clearance, and can rewrite feeds for corners and tool load.</p>
+    </div>
+    <div class="drop" id="drop">Drop to check</div>
+    <div class="toast" id="toast" hidden></div>
+  </section>
+
+  <aside class="panel right" id="side-panel">
+    <nav class="tabs" role="tablist">
+      <button role="tab" data-tab="issues" class="active">Issues <span class="count" id="issue-count"></span></button>
+      <button role="tab" data-tab="setup">Setup</button>
+      <button role="tab" data-tab="optimize">Optimize</button>
+      <button role="tab" data-tab="stats">Stats</button>
+    </nav>
+    <div class="tab-body" id="tab-issues" data-tab-body="issues"></div>
+    <div class="tab-body" id="tab-setup" data-tab-body="setup" hidden></div>
+    <div class="tab-body" id="tab-optimize" data-tab-body="optimize" hidden></div>
+    <div class="tab-body" id="tab-stats" data-tab-body="stats" hidden></div>
+  </aside>
+</main>
+
+<footer class="transport">
+  <div class="buttons">
+    <button class="btn icon" id="btn-start" title="Back to start (Home)"><svg viewBox="0 0 20 20"><path d="M5 4v12M16 4 7 10l9 6z"/></svg></button>
+    <button class="btn icon" id="btn-back" title="Previous move (←, Shift for line)"><svg viewBox="0 0 20 20"><path d="M13 4 6 10l7 6z"/></svg></button>
+    <button class="btn icon primary" id="btn-play" title="Play / pause (Space)"><svg viewBox="0 0 20 20" class="play"><path d="M6 4l10 6-10 6z"/></svg><svg viewBox="0 0 20 20" class="pause"><path d="M5 4h4v12H5zM11 4h4v12h-4z"/></svg></button>
+    <button class="btn icon" id="btn-fwd" title="Next move (→, Shift for line)"><svg viewBox="0 0 20 20"><path d="M7 4l7 6-7 6z"/></svg></button>
+    <button class="btn icon" id="btn-end" title="Run to the end (End)"><svg viewBox="0 0 20 20"><path d="M15 4v12M4 4l9 6-9 6z"/></svg></button>
+    <select id="speed" class="select" title="Playback speed (+/-)">
+      <option value="1">1×</option><option value="5">5×</option><option value="20" selected>20×</option>
+      <option value="100">100×</option><option value="500">500×</option><option value="0">Max</option>
+    </select>
+  </div>
+  <div class="timeline" id="timeline" title="Drag to scrub; red ticks are issues">
+    <canvas id="timeline-canvas"></canvas>
+  </div>
+  <div class="readout" id="readout"></div>
+</footer>
+</body>
+</html>
