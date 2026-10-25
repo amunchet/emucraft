@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Moonshot</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='11' fill='%234cc2ff'/%3E%3Ccircle cx='21' cy='12' r='9' fill='%231f7fb8'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/css/app.css">
+<script type="importmap">
+{ "imports": {
+  "three": "/vendor/three/three.module.min.js",
+  "three/addons/controls/OrbitControls.js": "/vendor/three/OrbitControls.min.js"
+} }
+</script>
+<script type="module" src="/js/moonshot.js"></script>
+</head>
+<body class="moonshot">
+<header class="topbar">
+  <div class="brand"><svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="11"/><circle cx="21" cy="12" r="9" class="shade"/></svg>Moonshot</div>
+  <div class="file-controls">
+    <button id="open-btn" class="btn" title="Upload a solid model (or drop one anywhere): STL, OBJ, PLY, 3MF, GLB">Upload…</button>
+    <input type="file" id="file-input" accept=".stl,.obj,.ply,.3mf,.glb,.gltf,.off,.step,.stp" hidden>
+    <select id="sample-select" class="select" aria-label="Sample parts"></select>
+  </div>
+  <div class="file-name" id="file-name"></div>
+  <div class="badge" id="status-badge" hidden></div>
+  <div class="spacer"></div>
+  <a class="btn" href="/" title="Emucraft's G-code viewer">G-code viewer</a>
+</header>
+
+<main class="layout" id="layout">
+  <aside class="panel left">
+    <div class="panel-head"><span>Models</span><span class="muted" id="model-count"></span></div>
+    <div class="tab-body" id="models"></div>
+    <div class="panel-head"><span>Runs</span><span class="muted" id="run-count"></span></div>
+    <div class="tab-body" id="runs"></div>
+  </aside>
+
+  <section class="viewport" id="viewport">
+    <canvas id="canvas"></canvas>
+    <div class="view-tools">
+      <div class="seg">
+        <button data-view="iso" title="Isometric view">Iso</button>
+        <button data-view="top" title="Top view">Top</button>
+        <button data-view="front" title="Front view">Front</button>
+        <button data-view="right" title="Right view">Right</button>
+        <button data-view="fit" title="Fit">Fit</button>
+      </div>
+      <div class="seg toggles">
+        <label><input type="checkbox" id="show-part" checked>Part</label>
+        <label><input type="checkbox" id="show-holder" checked>Holder</label>
+        <label><input type="checkbox" id="show-points" checked>Points</label>
+        <label><input type="checkbox" id="show-axes">Axes</label>
+        <label><input type="checkbox" id="show-drum" checked>Drum</label>
+      </div>
+      <div class="seg">
+        <select id="color-mode" class="select" title="Point coloring">
+          <option value="reach">Reach</option>
+          <option value="grain">Grain tilt</option>
+          <option value="change">Neighbor turn</option>
+          <option value="track">Track offset</option>
+          <option value="pass">Pass</option>
+        </select>
+      </div>
+    </div>
+    <div class="hud" id="hud"></div>
+    <div class="legend" id="legend"></div>
+    <div class="progress" id="progress" hidden><div class="bar"></div><span></span></div>
+    <div class="empty" id="empty">
+      <h1>Plan a cylinder over a part</h1>
+      <p>Upload a solid model or add a sample, then plan it. Moonshot finds, at every point of a grid over the surface, the orientations at which a sanding drum touches it without hitting the part or its holder, picks a smooth, level one, steps the contact along the drum between passes, and writes a FANUC program. Click the part to see the drum at that point.</p>
+    </div>
+    <div class="drop" id="drop">Drop to upload</div>
+    <div class="toast" id="toast" hidden></div>
+  </section>
+
+  <aside class="panel right">
+    <nav class="tabs" role="tablist">
+      <button role="tab" data-tab="plan" class="active">Plan</button>
+      <button role="tab" data-tab="run">Run</button>
+      <button role="tab" data-tab="program">Program</button>
+      <button role="tab" data-tab="files">Files</button>
+    </nav>
+    <div class="tab-body" data-tab-body="plan" id="tab-plan"></div>
+    <div class="tab-body" data-tab-body="run" id="tab-run" hidden></div>
+    <div class="tab-body" data-tab-body="program" id="tab-program" hidden></div>
+    <div class="tab-body" data-tab-body="files" id="tab-files" hidden></div>
+  </aside>
+</main>
+
+<footer class="transport">
+  <div class="buttons">
+    <button class="btn icon primary" id="btn-play" title="Play the robot program (Space)" disabled><svg viewBox="0 0 20 20" class="play"><path d="M6 4l10 6-10 6z"/></svg><svg viewBox="0 0 20 20" class="pause"><path d="M5 4h4v12H5zM11 4h4v12h-4z"/></svg></button>
+    <select id="speed" class="select" title="Playback speed">
+      <option value="1">1×</option><option value="5" selected>5×</option><option value="20">20×</option><option value="100">100×</option>
+    </select>
+  </div>
+  <input type="range" id="scrub" class="scrub" min="0" max="0" value="0" disabled title="Step through the robot program">
+  <div class="readout" id="readout"></div>
+</footer>
+</body>
+</html>

@@ -121,6 +121,28 @@ whole units, as on controls with decimal-point input enabled. When no stock
 size is given anywhere, it is estimated from the cutting moves (with a
 warning), which can put the stock top too high if a feed move starts in air.
 
+## Moonshot: robot sanding
+
+[Moonshot](moonshot/README.md) plans how a long cylinder, such as a sanding drum held against a part by a robot,
+touches every point of a solid without hitting the part or its fixture, keeps the drum level with the wood grain,
+steps the contact along the drum between passes so it wears evenly, and writes a FANUC program for Roboguide.
+
+```sh
+pip install -e ".[moonshot]"              # Python 3.10+: numpy, scipy, numba, trimesh, matplotlib
+emucraft serve --open                     # the Moonshot page is http://127.0.0.1:8765/moonshot/
+moonshot samples/wave_plate.stl --spacing 0.05 --track --out results/plate
+python -m moonshot.fanuc results/plate
+```
+
+- **Web page** (`/moonshot/` in `emucraft serve`): upload a model or pick a sample, plan it, and look at the result
+  in 3D: reach, grain tilt, tracking and passes on every grid point, and the drum wherever you click. Write the
+  robot program and play it back along the part, render the step pictures, and download every file.
+- **MCP server** (`moonshot-mcp`, `pip install -e ".[moonshot-mcp]"`): the same pipeline for an MCP client, run as
+  its own process or container.
+- **Command line**: `moonshot` (or `python -m moonshot`) and `python -m moonshot.fanuc`.
+
+Moonshot is optional: without its extras, emucraft installs and runs exactly as before.
+
 ## Jobs with several programs
 
 CAM systems often post one file per toolpath. A finishing program checked on
@@ -247,6 +269,18 @@ Serve it at the root of a (sub)domain: the viewer calls `/api/...` with absolute
 
 The viewer lists the bundled `examples/` plus anything in `/programs` inside the container; uncomment the volume in `docker-compose.yml` to mount your own folder (an `emucraft.toml` there is picked up as the default config).
 
+The image includes Moonshot: its page is `/moonshot/`, with its models and runs in the `moonshot-web` volume (`/data`).
+
+Moonshot's MCP server is a separate image and service, behind the `mcp` profile so it only runs when asked for:
+
+```bash
+docker build --target moonshot-mcp -t moonshot-mcp .
+MOONSHOT_TOKEN=... docker compose --profile mcp up -d --build     # streamable HTTP at moonshot-mcp:8000/mcp
+```
+
+Its data (`moonshot-mcp` volume) is separate from the web page's. Set `MOONSHOT_TOKEN` (and `MOONSHOT_URL`, its
+public address, for download links) or put it behind an authenticating proxy; see [moonshot/README.md](moonshot/README.md#mcp-server).
+
 ## Performance
 
 Measured on a 4-core container:
@@ -267,7 +301,10 @@ before sweeping, and runs row bands on all cores.
 make -C kernel test        # C unit tests: sweeps against brute-force references
 make -C kernel             # native library + WebAssembly (needs clang with wasm32/wasm-ld)
 python -m pytest           # Python suite; WASM/native parity tests need Node.js
+pip install -e ".[moonshot-dev]" && python -m pytest tests/moonshot   # Moonshot (Python 3.10+, about 5 minutes)
 ```
+
+`tests/moonshot/` is skipped when Moonshot's dependencies are not installed.
 
 - `emucraft/web/wasm/emucraft.wasm` is committed so the viewer works without
   clang; rebuild it after changing `kernel/src/emucraft.c`.

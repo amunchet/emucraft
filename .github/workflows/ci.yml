@@ -35,3 +35,19 @@ jobs:
           path: |
             junit.xml
             report*.html
+
+  moonshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install with Moonshot
+        run: pip install -e ".[moonshot-dev]"
+      - name: Moonshot tests (pipeline, robot program, MCP server, web page API)
+        run: python -m pytest -q tests/moonshot tests/test_server.py
+      - name: Plan a sample from the command line
+        run: |
+          moonshot samples/wave_plate.stl --spacing 0.05 --track --out results/plate
+          python -m moonshot.fanuc results/plate

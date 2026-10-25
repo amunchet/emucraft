@@ -7,11 +7,36 @@ services:
     # No published ports - Caddy reaches this at http://emucraft:8000 over the shared network
     expose:
       - "8000"
-    # Uncomment to list your own programs (and an emucraft.toml) in the viewer
-    # volumes:
-    #   - ./programs:/programs:ro
+    volumes:
+      - moonshot-web:/data   # the Moonshot page's models and runs
+      # Uncomment to list your own programs (and an emucraft.toml) in the viewer
+      # - ./programs:/programs:ro
     networks:
       - emucraft
+
+  # Moonshot's MCP server, separate from the web app (its own data). Start it with
+  #   docker compose --profile mcp up -d --build
+  moonshot-mcp:
+    build:
+      context: .
+      target: moonshot-mcp
+    image: moonshot-mcp:latest
+    container_name: moonshot-mcp
+    restart: unless-stopped
+    profiles: ["mcp"]
+    expose:
+      - "8000"
+    environment:
+      - MOONSHOT_TOKEN=${MOONSHOT_TOKEN:-}
+      - MOONSHOT_URL=${MOONSHOT_URL:-}
+    volumes:
+      - moonshot-mcp:/data
+    networks:
+      - emucraft
+
+volumes:
+  moonshot-web:
+  moonshot-mcp:
 
 networks:
   emucraft:

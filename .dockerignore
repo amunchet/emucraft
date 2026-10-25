@@ -18,3 +18,9 @@ images
 *.stl
 *.block
 *.opt.nc
+moonshot-data
+serve
+results
+assets
+ingest
+CHANGELOG

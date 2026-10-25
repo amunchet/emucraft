@@ -7,19 +7,28 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "emucraft"
 dynamic = ["version"]
-description = "Fast G-code simulation, collision checking and feed optimization with a web (Three.js) viewer"
+description = "Fast G-code simulation, collision checking and feed optimization with a web (Three.js) viewer, and Moonshot: cylinder contact planning for robot sanding"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = ["tomli>=1.1; python_version < '3.11'"]
 
 [project.optional-dependencies]
 dev = ["pytest>=7"]
+# Moonshot (Python 3.10+): the planner, its pictures, and its page in `emucraft serve`
+moonshot = ["numpy>=1.24", "scipy>=1.14", "numba>=0.59", "trimesh>=4.0", "matplotlib>=3.7", "pillow>=10",
+            "shapely>=2", "fast-simplification"]
+step = ["cascadio"]
+# Moonshot's MCP server, run on its own (moonshot-mcp)
+moonshot-mcp = ["emucraft[moonshot]", "mcp>=2.3", "uvicorn"]
+moonshot-dev = ["emucraft[moonshot-mcp]", "pytest>=7", "httpx", "rtree", "scikit-image>=0.22"]
 
 [project.scripts]
 emucraft = "emucraft.cli:main"
+moonshot = "moonshot.pipeline:main"
+moonshot-mcp = "moonshot.server:main"
 
 [tool.setuptools]
-packages = ["emucraft"]
+packages = ["emucraft", "moonshot"]
 
 [tool.setuptools.dynamic]
 version = { attr = "emucraft.__version__" }
@@ -29,3 +38,4 @@ emucraft = ["web/*", "web/**/*", "_kernel/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning:skimage"]

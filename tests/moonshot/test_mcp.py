@@ -13,6 +13,7 @@ pytest.importorskip("mcp")
 from mcp import Client
 
 import moonshot.server as srv
+from moonshot import store
 
 SAMPLE = Path(__file__).resolve().parents[2] / "samples" / "wave_plate.stl"
 
@@ -37,7 +38,7 @@ async def upload(client, blob, filename="plate.stl", chunk=50_000, digest=None):
 @pytest.fixture(scope="module")
 def planned(tmp_path_factory):
     """A coarse run of the wave plate, uploaded in chunks and planned with tracking, waited for."""
-    srv.DATA = tmp_path_factory.mktemp("serve")
+    store.DATA = tmp_path_factory.mktemp("serve")
 
     async def go():
         async with Client(srv.server) as client:
@@ -57,7 +58,7 @@ def test_upload_keeps_the_model_intact(planned):
     blob = SAMPLE.read_bytes()
     assert model["size"] == len(blob) and model["sha256"] == hashlib.sha256(blob).hexdigest()
     assert model["triangles"] > 0 and model["watertight"]
-    stored = srv.DATA / "models" / model["model_id"] / "plate.stl"
+    stored = store.DATA / "models" / model["model_id"] / "plate.stl"
     assert stored.read_bytes() == blob
 
 

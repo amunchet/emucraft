@@ -6,6 +6,8 @@
     GET  /api/programs/<name>     program text
     POST /api/analyze             {name, text, settings}          -> report + path
     POST /api/optimize            {name, text, settings, options} -> new program
+    GET  /moonshot/               Moonshot's page (cylinder contact planning)
+    *    /api/moonshot/...        its API, see moonshot/web.py (needs pip install .[moonshot])
 
 Lengths in ``settings`` are in program units. Binary arrays travel as base64
 of little-endian typed arrays so the browser can hand them to its
@@ -96,10 +98,24 @@ class EmucraftServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
 
-    def __init__(self, address, programs: Optional[Path] = None, config: Optional[Config] = None):
+    def __init__(self, address, programs: Optional[Path] = None, config: Optional[Config] = None,
+                 moonshot_data: Optional[Path] = None):
         super().__init__(address, Handler)
         self.programs = programs
         self.config = config
+        self.moonshot_data = moonshot_data or Path("moonshot-data")
+        self._moonshot = None
+        self._moonshot_lock = threading.Lock()
+
+    def moonshot(self):
+        """Moonshot's web API, its data directory opened on first use. ImportError without its extras."""
+        with self._moonshot_lock:
+            if self._moonshot is None:
+                from moonshot import store, web
+
+                store.open_data(self.moonshot_data)
+                self._moonshot = web
+            return self._moonshot
 
     def program_dirs(self) -> List[Tuple[str, Path]]:
         dirs = []
@@ -163,14 +179,17 @@ class Handler(BaseHTTPRequestHandler):
     def _error(self, status: int, message: str) -> None:
         self._json(status, {"error": message})
 
-    def _body(self) -> dict:
+    def _raw(self) -> bytes:
         length = int(self.headers.get("Content-Length") or 0)
         if length > MAX_BODY:
             raise ValueError("request too large")
-        raw = self.rfile.read(length) if length else b"{}"
+        raw = self.rfile.read(length) if length else b""
         if self.headers.get("Content-Encoding") == "gzip":
             raw = gzip.decompress(raw)
-        data = json.loads(raw.decode("utf-8"))
+        return raw
+
+    def _body(self) -> dict:
+        data = json.loads((self._raw() or b"{}").decode("utf-8"))
         if not isinstance(data, dict):
             raise ValueError("expected a JSON object")
         return data
@@ -183,7 +202,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         path = unquote(urlparse(self.path).path)
         try:
-            if path == "/api/info":
+            if path.startswith("/api/moonshot/"):
+                self._moonshot(path)
+            elif path == "/api/info":
                 self._json(200, {"version": __version__, "materials": MATERIALS,
                                  "optimize_defaults": asdict(OptimizeSpec())})
             elif path == "/api/programs":
@@ -202,8 +223,14 @@ class Handler(BaseHTTPRequestHandler):
             traceback.print_exc()
             self._error(500, str(exc))
 
+    def do_PUT(self) -> None:
+        self._moonshot(unquote(urlparse(self.path).path))
+
     def do_POST(self) -> None:
         path = urlparse(self.path).path
+        if path.startswith("/api/moonshot/"):
+            self._moonshot(unquote(path))
+            return
         try:
             data = self._body()
             if path == "/api/analyze":
@@ -218,6 +245,31 @@ class Handler(BaseHTTPRequestHandler):
             traceback.print_exc()
             self._error(500, f"{type(exc).__name__}: {exc}")
 
+    def _moonshot(self, path: str) -> None:
+        if not path.startswith("/api/moonshot/"):
+            self._error(404, "unknown endpoint")
+            return
+        try:
+            web = self.server.moonshot()
+        except ImportError as exc:
+            self._error(503, f"Moonshot is not installed here ({exc}): pip install emucraft[moonshot]")
+            return
+        try:
+            status, value = web.handle(self.command if self.command != "HEAD" else "GET",
+                                       path[len("/api/moonshot"):], self._raw())
+        except (ValueError, TypeError, KeyError) as exc:
+            self._error(400, str(exc))
+            return
+        except Exception as exc:  # pragma: no cover - defensive
+            traceback.print_exc()
+            self._error(500, f"{type(exc).__name__}: {exc}")
+            return
+        if isinstance(value, Path):
+            ctype = mimetypes.guess_type(value.name)[0] or "application/octet-stream"
+            self._send(status, value.read_bytes(), ctype)
+        else:
+            self._json(status, web.finite(value))
+
     def _list_programs(self) -> List[dict]:
         out = []
         for source, folder in self.server.program_dirs():
@@ -229,6 +281,8 @@ class Handler(BaseHTTPRequestHandler):
     def _static(self, path: str) -> None:
         if path in ("", "/"):
             path = "/index.html"
+        elif path in ("/moonshot", "/moonshot/"):
+            path = "/moonshot.html"
         root = WEB.resolve()
         target = (root / path.lstrip("/")).resolve()
         if root not in target.parents or not target.is_file():
@@ -287,22 +341,22 @@ def _optimized_name(name: str) -> str:
 
 
 def make_server(host: str = "127.0.0.1", port: int = 8765, programs=None,
-                config: Optional[Config] = None) -> EmucraftServer:
+                config: Optional[Config] = None, moonshot_data=None) -> EmucraftServer:
     folder = Path(programs).resolve() if programs else None
     if folder is not None and not folder.is_dir():
         raise ValueError(f"{programs} is not a folder")
-    return EmucraftServer((host, port), folder, config)
+    return EmucraftServer((host, port), folder, config, Path(moonshot_data) if moonshot_data else None)
 
 
 def serve(host: str = "127.0.0.1", port: int = 8765, programs=None, config: Optional[Config] = None,
-          open_browser: bool = False) -> int:
+          open_browser: bool = False, moonshot_data=None) -> int:
     try:
-        server = make_server(host, port, programs, config)
+        server = make_server(host, port, programs, config, moonshot_data)
     except (OSError, ValueError) as exc:
         print(f"emucraft: {exc}", file=sys.stderr)
         return 2
     url = f"http://{host if host not in ('0.0.0.0', '::') else 'localhost'}:{server.server_address[1]}/"
-    print(f"Emucraft viewer on {url}  (Ctrl+C to stop)")
+    print(f"Emucraft viewer on {url}, Moonshot on {url}moonshot/  (Ctrl+C to stop)")
     if open_browser:
         threading.Timer(0.5, lambda: webbrowser.open(url)).start()
     try:

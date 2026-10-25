@@ -2,5 +2,7 @@
 # (the kernel is compiled on first use; `pip install .` prebuilds it).
 tomli>=1.1; python_version < "3.11"
 
+# Moonshot (optional, Python 3.10+): pip install -e ".[moonshot]"; see README.md
+
 # development
 pytest>=7

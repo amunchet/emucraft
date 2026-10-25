@@ -241,7 +241,8 @@ def cmd_serve(args) -> int:
     from .server import serve
 
     config = load_config(args.config) if args.config else None
-    return serve(args.host, args.port, programs=args.programs, config=config, open_browser=args.open)
+    return serve(args.host, args.port, programs=args.programs, config=config, open_browser=args.open,
+                 moonshot_data=args.moonshot_data)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -296,6 +297,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--programs", help="folder of programs to list in the viewer")
     p.add_argument("-c", "--config", help="configuration file")
     p.add_argument("--open", action="store_true", help="open a browser")
+    p.add_argument("--moonshot-data", default="moonshot-data",
+                   help="data directory of the Moonshot page at /moonshot/ (default ./moonshot-data)")
     p.set_defaults(func=cmd_serve)
     return parser
 
