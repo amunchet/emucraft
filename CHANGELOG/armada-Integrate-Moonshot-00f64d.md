@@ -35,7 +35,7 @@ project, with a web interface, and its MCP server kept separate.
 - Found, not changed: `python -m moonshot.fanuc` fails on a 0.1 in grid of the wave plate ("no way off and back on
   the part ... clears the drum"); 0.05 in works.
 
-## 2026-10-25 03:10 CDT (2026-10-25 08:10 UTC)
+## 2026-10-25 03:03 CDT (2026-10-25 08:03 UTC)
 Merged master, which added emucraft's own G-code MCP server (`emucraft mcp`, `.[mcp]` extra). Both extras are kept in
 `pyproject.toml` and `requirements.txt`. Moonshot's MCP test is now `tests/moonshot/test_moonshot_mcp.py`, since a
 second `test_mcp.py` breaks pytest's collection, and its compose profile is `moonshot-mcp`, so the two MCP servers
