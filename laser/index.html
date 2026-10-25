@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Emucraft Laser Simulator</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --bg: #111317; --panel: #181b21; --panel2: #1f232b; --line: #2b3039; --text: #d8dce3; --muted: #8a92a0;
+    --accent: #ff7a3d; --accent2: #ffb08a; --ok: #59c38a; --warn: #e2b54a; --err: #e86060;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 13px/1.35 system-ui, -apple-system, "Segoe UI", sans-serif; overflow: hidden; }
+  #app { display: flex; height: 100%; }
+  #panel { width: 330px; min-width: 280px; background: var(--panel); border-right: 1px solid var(--line); overflow-y: auto; padding: 10px 12px 0; display: flex; flex-direction: column; }
+  #panel > * { flex: none; }
+  #dock { position: sticky; bottom: 0; margin-top: auto; background: var(--panel); border-top: 1px solid var(--line); padding: 4px 0 10px; box-shadow: 0 -8px 12px -8px rgba(0,0,0,.6); }
+  .warn { color: var(--warn); }
+  #view { position: relative; flex: 1; min-width: 0; }
+  #view canvas { display: block; width: 100%; height: 100%; outline: none; }
+  h1 { font-size: 15px; margin: 2px 0 10px; letter-spacing: .02em; }
+  h1 span { color: var(--accent); }
+  details { border-top: 1px solid var(--line); padding: 6px 0 8px; }
+  summary { cursor: pointer; font-weight: 600; color: #eef0f4; padding: 2px 0 6px; user-select: none; }
+  .row { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
+  .row > label { flex: 1; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row > input[type=number], .row > select { width: 108px; }
+  .row > input[type=range] { width: 120px; }
+  .row > output { width: 42px; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 8px; }
+  .grid2 .row > input[type=number] { width: 72px; }
+  input, select, button { font: inherit; color: var(--text); background: var(--panel2); border: 1px solid var(--line); border-radius: 4px; padding: 3px 6px; }
+  input[type=color] { padding: 0 2px; width: 44px; height: 24px; }
+  input[type=checkbox] { accent-color: var(--accent); }
+  input[type=range] { accent-color: var(--accent); padding: 0; }
+  button { cursor: pointer; padding: 4px 9px; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #1a0d05; font-weight: 700; width: 100%; padding: 7px; margin-top: 6px; }
+  button.primary:disabled { opacity: .5; cursor: wait; }
+  .btns { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; }
+  .file { display: block; margin: 4px 0; color: var(--muted); }
+  .file input { width: 100%; margin-top: 2px; }
+  .readout { color: var(--muted); font-size: 12px; margin: 4px 0; font-variant-numeric: tabular-nums; }
+  .readout b { color: var(--text); font-weight: 600; }
+  .hint { color: var(--muted); font-size: 11.5px; margin: 4px 0; }
+  kbd { background: var(--panel2); border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; font-size: 11px; }
+  #progress { height: 4px; background: var(--panel2); border-radius: 2px; overflow: hidden; margin-top: 6px; }
+  #progress > div { height: 100%; width: 0; background: var(--accent); transition: width .1s; }
+  #status { margin-top: 6px; max-height: 6.5em; overflow-y: auto; font-size: 12px; color: var(--muted); white-space: pre-wrap; word-break: break-word; }
+  #status.err { color: var(--err); }
+  #modes { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); display: flex; background: rgba(20,22,27,.85); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; backdrop-filter: blur(4px); }
+  #modes button { border: 0; border-radius: 0; background: transparent; padding: 6px 16px; }
+  #modes button.on { background: var(--accent); color: #1a0d05; font-weight: 700; }
+  #modes button:disabled { opacity: .4; cursor: default; }
+  #badge { position: absolute; top: 52px; left: 50%; transform: translateX(-50%); background: rgba(226,181,74,.15); color: var(--warn); border: 1px solid rgba(226,181,74,.4); padding: 3px 10px; border-radius: 4px; font-size: 12px; display: none; }
+  #help { position: absolute; bottom: 10px; left: 12px; color: rgba(220,224,230,.7); font-size: 11.5px; text-shadow: 0 1px 2px #000; pointer-events: none; }
+  #drop { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(255,122,61,.12); border: 2px dashed var(--accent); font-size: 18px; color: var(--accent2); pointer-events: none; }
+  #drop.on { display: flex; }
+  @media (max-width: 760px) {
+    #app { flex-direction: column-reverse; }
+    #panel { width: 100%; height: 45%; border-right: 0; border-top: 1px solid var(--line); }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <aside id="panel">
+    <h1>Emucraft <span>Laser</span> Simulator</h1>
+
+    <details open>
+      <summary>Inputs</summary>
+      <label class="file">Model (STL, OBJ, GLB, GLTF)<input id="f_model" type="file" accept=".stl,.obj,.glb,.gltf"></label>
+      <label class="file">Bitmap (PNG, JPG, BMP, WEBP...)<input id="f_image" type="file" accept="image/*"></label>
+      <div class="btns"><button id="b_demo">Load demo</button></div>
+      <div class="readout" id="r_inputs"></div>
+      <div class="hint">Files can also be dropped anywhere on the window.</div>
+    </details>
+
+    <details open>
+      <summary>Alignment</summary>
+      <div class="grid2">
+        <div class="row"><label>X mm</label><input id="p_cx" type="number" step="0.1"></div>
+        <div class="row"><label>Y mm</label><input id="p_cy" type="number" step="0.1"></div>
+        <div class="row"><label>W mm</label><input id="p_w" type="number" step="0.1" min="0.01"></div>
+        <div class="row"><label>H mm</label><input id="p_h" type="number" step="0.1" min="0.01"></div>
+        <div class="row"><label>Angle °</label><input id="p_angle" type="number" step="1"></div>
+        <div class="row"><label>Lock aspect</label><input id="p_lock" type="checkbox" checked></div>
+      </div>
+      <div class="row"><label>Preview opacity</label><input id="p_opacity" type="range" min="0" max="1" step="0.05" value="0.85"><output id="o_opacity"></output></div>
+      <div class="btns">
+        <button id="b_reset_size">1 px = 1 spot</button>
+        <button id="b_fit">Fit to model</button>
+        <button id="b_centre">Centre on model</button>
+        <button id="b_top">Top view</button>
+        <button id="b_persp">3/4 view</button>
+      </div>
+      <div class="readout" id="r_place"></div>
+      <div class="hint">Align mode: drag the image to move, <kbd>Shift</kbd>+drag to rotate (+<kbd>Ctrl</kbd> to snap 15°), <kbd>Alt</kbd>/<kbd>Ctrl</kbd>+wheel to scale. Drag elsewhere to orbit.</div>
+    </details>
+
+    <details open>
+      <summary>Laser</summary>
+      <div class="row"><label>Spot at focus (mm)</label><input id="l_spot_mm" type="number" step="0.005" min="0.005" max="2"></div>
+      <div class="row"><label>Focal length (mm)</label><input id="l_focal_length_mm" type="number" step="1" min="10" max="1000"></div>
+      <div class="row"><label>Beam Ø at lens (mm)</label><input id="l_beam_diameter_mm" type="number" step="0.5" min="0.5" max="50"></div>
+      <div class="row"><label>Focus offset (mm)</label><input id="l_focus_offset_mm" type="number" step="0.05" min="-20" max="20"></div>
+      <div class="row"><label>Power (W)</label><input id="l_power_w" type="number" step="1" min="0" max="500"></div>
+      <div class="row"><label>Rated power (W)</label><input id="l_max_power_w" type="number" step="1" min="1" max="500"></div>
+      <div class="row"><label>Depth / pass (mm)</label><input id="l_depth_per_pass_mm" type="number" step="0.005" min="0" max="2"></div>
+      <div class="row"><label>Passes</label><input id="l_passes" type="number" step="1" min="1" max="1000"></div>
+      <div class="row"><label>Threshold</label><input id="l_threshold" type="number" step="0.01" min="0" max="0.99"></div>
+      <div class="row"><label>Gamma</label><input id="l_gamma" type="number" step="0.1" min="0.1" max="5"></div>
+      <div class="row"><label>Invert (white burns)</label><input id="l_invert" type="checkbox"></div>
+      <div class="row"><label>Supersample</label><select id="s_super"><option>1</option><option selected>2</option><option>3</option><option>4</option></select></div>
+      <div class="readout" id="r_laser"></div>
+      <div class="readout" id="r_result"></div>
+    </details>
+
+    <details>
+      <summary>Material</summary>
+      <div class="row"><label>Preset</label><select id="m_preset" style="width:170px"></select></div>
+      <div class="row"><label>Base colour</label><input id="m_color" type="color"></div>
+      <div class="row"><label>Mark colour</label><input id="m_mark" type="color"></div>
+      <div class="row"><label>Roughness</label><input id="m_rough" type="range" min="0" max="1" step="0.01"><output id="o_rough"></output></div>
+      <div class="row"><label>Metalness</label><input id="m_metal" type="range" min="0" max="1" step="0.01"><output id="o_metal"></output></div>
+      <div class="row"><label>Mark roughness</label><input id="m_mark_rough" type="range" min="0" max="1" step="0.01"><output id="o_mark_rough"></output></div>
+      <div class="row"><label>Mark metalness</label><input id="m_mark_metal" type="range" min="0" max="1" step="0.01"><output id="o_mark_metal"></output></div>
+      <div class="row"><label>Texture scale (mm)</label><input id="m_tex_scale" type="number" step="5" min="1" max="1000" value="80"></div>
+      <label class="file">Custom base texture<input id="f_texture" type="file" accept="image/*"></label>
+      <div class="row"><label>Depth exaggeration</label><input id="v_exag" type="range" min="1" max="20" step="0.5" value="1"><output id="o_exag"></output></div>
+    </details>
+
+    <details>
+      <summary>Lighting &amp; view</summary>
+      <div class="row"><label>Exposure</label><input id="v_exposure" type="range" min="0.2" max="3" step="0.05" value="1"><output id="o_exposure"></output></div>
+      <div class="row"><label>Environment</label><input id="v_env" type="range" min="0" max="3" step="0.05" value="0.8"><output id="o_env"></output></div>
+      <div class="row"><label>Key intensity</label><input id="v_key" type="range" min="0" max="8" step="0.1" value="2.6"><output id="o_key"></output></div>
+      <div class="row"><label>Key azimuth °</label><input id="v_az" type="range" min="0" max="360" step="1" value="225"><output id="o_az"></output></div>
+      <div class="row"><label>Key elevation °</label><input id="v_el" type="range" min="5" max="90" step="1" value="40"><output id="o_el"></output></div>
+      <div class="row"><label>Shadow softness</label><input id="v_soft" type="range" min="0" max="12" step="0.5" value="4"><output id="o_soft"></output></div>
+      <div class="row"><label>Fill</label><input id="v_fill" type="range" min="0" max="2" step="0.05" value="0.35"><output id="o_fill"></output></div>
+      <div class="row"><label>Background</label><select id="v_bg"><option value="gradient">Gradient</option><option value="solid">Solid</option><option value="studio">Studio white</option><option value="env">Environment</option></select></div>
+      <div class="row"><label>Background colour</label><input id="v_bg_color" type="color" value="#2a2f38"></div>
+      <div class="row"><label>Ground shadow</label><input id="v_ground" type="checkbox" checked></div>
+      <div class="row"><label>Depth heat-map</label><input id="v_heat" type="checkbox"></div>
+      <div class="row"><label>Wireframe</label><input id="v_wire" type="checkbox"></div>
+    </details>
+
+    <details>
+      <summary>Export</summary>
+      <div class="btns">
+        <button id="b_png">Save PNG</button>
+        <button id="b_png2">Save PNG 2×</button>
+        <button id="b_glb">Export GLB</button>
+      </div>
+    </details>
+
+    <div id="dock">
+      <button id="b_sim" class="primary">Simulate</button>
+      <div id="progress"><div></div></div>
+      <div id="status"></div>
+    </div>
+  </aside>
+  <main id="view">
+    <div id="modes"><button id="mode_align" class="on">Align</button><button id="mode_result" disabled>Result</button></div>
+    <div id="badge">Settings changed since the last simulation</div>
+    <div id="help">Left-drag orbit · right-drag pan · wheel zoom</div>
+    <div id="drop">Drop a model (STL/OBJ/GLB) or an image</div>
+  </main>
+</div>
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>

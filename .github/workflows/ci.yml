@@ -17,13 +17,15 @@ jobs:
           python-version: ${{ matrix.python }}
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
       - name: Kernel unit tests
         run: make -C kernel native test
       - name: Install
         run: pip install -e ".[dev,mcp]"
       - name: Python tests (includes WebAssembly/native parity)
         run: python -m pytest -q
+      - name: Laser simulator tests
+        run: cd laser && npm ci && npm test
       - name: Check the examples
         run: |
           emucraft check examples/makino_roughing.nc examples/pocket_corners.nc --junit junit.xml --html report.html
