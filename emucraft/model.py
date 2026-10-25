@@ -161,6 +161,7 @@ class CheckSpec:
     units: Optional[str] = None  # force program units
     default_units: str = "inch"
     threads: Optional[int] = None
+    fuzz_threshold: float = 0.85  # how close a comment label must be to an alias (1 = exact)
 
 
 @dataclass
@@ -174,6 +175,7 @@ class Config:
     optimize: Dict[str, object] = field(default_factory=dict)
     comment_rules: List[Tuple[str, str]] = field(default_factory=list)
     variable_rules: Dict[int, str] = field(default_factory=dict)
+    comment_aliases: Dict[str, List[str]] = field(default_factory=dict)  # replaces defaults per target
 
     def copy(self) -> "Config":
         import copy

@@ -4,6 +4,7 @@
     emucraft check *.nc --junit out.xml  # for CI
     emucraft optimize part.nc -o part.opt.nc --material titanium
     emucraft serve                       # web viewer on http://127.0.0.1:8765
+    emucraft mcp                         # MCP server (stdio) for CAM pipelines
 """
 
 from __future__ import annotations
@@ -244,6 +245,18 @@ def cmd_serve(args) -> int:
     return serve(args.host, args.port, programs=args.programs, config=config, open_browser=args.open)
 
 
+def cmd_mcp(args) -> int:
+    try:
+        from .mcp_server import server
+    except ModuleNotFoundError as exc:
+        if not (exc.name or "").startswith("mcp"):
+            raise
+        print("emucraft: the MCP server needs Python 3.10+ and `pip install emucraft[mcp]`", file=sys.stderr)
+        return EXIT_USAGE
+    server.run()
+    return EXIT_OK
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="emucraft", description="G-code simulation, collision checking "
                                      "and feed optimization")
@@ -297,6 +310,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-c", "--config", help="configuration file")
     p.add_argument("--open", action="store_true", help="open a browser")
     p.set_defaults(func=cmd_serve)
+
+    p = sub.add_parser("mcp", help="run the MCP server (stdio) for CAM pipelines")
+    p.set_defaults(func=cmd_mcp)
+
     return parser
 
 
