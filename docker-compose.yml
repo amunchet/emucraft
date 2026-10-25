@@ -15,7 +15,7 @@ services:
       - emucraft
 
   # Moonshot's MCP server, separate from the web app (its own data). Start it with
-  #   docker compose --profile mcp up -d --build
+  #   docker compose --profile moonshot-mcp up -d --build
   moonshot-mcp:
     build:
       context: .
@@ -23,7 +23,7 @@ services:
     image: moonshot-mcp:latest
     container_name: moonshot-mcp
     restart: unless-stopped
-    profiles: ["mcp"]
+    profiles: ["moonshot-mcp"]
     expose:
       - "8000"
     environment:

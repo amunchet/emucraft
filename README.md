@@ -138,7 +138,7 @@ python -m moonshot.fanuc results/plate
   in 3D: reach, grain tilt, tracking and passes on every grid point, and the drum wherever you click. Write the
   robot program and play it back along the part, render the step pictures, and download every file.
 - **MCP server** (`moonshot-mcp`, `pip install -e ".[moonshot-mcp]"`): the same pipeline for an MCP client, run as
-  its own process or container.
+  its own process or container. It is separate from emucraft's own G-code MCP server, `emucraft mcp`.
 - **Command line**: `moonshot` (or `python -m moonshot`) and `python -m moonshot.fanuc`.
 
 Moonshot is optional: without its extras, emucraft installs and runs exactly as before.
@@ -221,6 +221,37 @@ Tool values are applied in this order, later winning: program comments,
 where each value came from. Holder checks need both `holder_diameter` and
 `stickout`.
 
+### Reading tool data from comments
+
+Tool and stock values come from CAM comments in three ways, all adjustable
+in the config:
+
+- **Comment rules** match known header formats (`DIAMETER:`,
+  `Tool Holder Diameter:`, `FLUTE LENGTH:`, `SHANK DIA:`, `MIN X:` ...).
+  `[[comment_rules]]` adds regexes that run before the built-in ones.
+- **Variable rules** read macro variables: `#127` is the holder length and
+  `#128` the stick-out by default. `[variable_rules]` adds or remaps them.
+- **Label aliases** catch any other `(label: value)` comment whose label is
+  close to a known name, forgiving case, punctuation and typos:
+  `(HOLDER DIAMTER: 2)`, `(Tool-Holder Length = 3.5)`, `(LOC .75)`. Aliases are
+  only tried when no rule matched. Aliases shorter than five letters (`dia`,
+  `loc`) must match exactly. A loose match is listed as a `comment-label` info
+  message. `[check] fuzz_threshold` (0-1, default 0.85) sets how close a label
+  must be, and 1 means exact only. `[comment_aliases]` replaces the alias list
+  of a target:
+
+```toml
+[check]
+fuzz_threshold = 0.9
+
+[comment_aliases]
+"tool.stickout" = ["stickout", "gauge from holder"]
+"tool.flute_length" = ["flute length", "loc", "length of cut"]
+```
+
+A length followed by `mm`, `in` or `"` is converted to the program's units
+once they are known. `emucraft info part.nc` lists what was read.
+
 ## In CI
 
 `emucraft check` exits with 0 when there are no collisions, 1 on collisions
@@ -245,6 +276,33 @@ jobs:
         if: always()
         with: { name: emucraft-report, path: "report*.html" }
 ```
+
+## MCP server
+
+`emucraft mcp` serves Emucraft over the Model Context Protocol (stdio), so a
+generative CAM pipeline or an agent can check each program it produces. It
+needs Python 3.10+ and the `mcp` extra:
+
+```sh
+pip install -e ".[mcp]"
+```
+
+```json
+{"mcpServers": {"emucraft": {"command": "emucraft", "args": ["mcp"]}}}
+```
+
+| Tool | What it does |
+|---|---|
+| `check_program` | Full collision check. Returns status, issues with lines and depths, interpreter messages, and the tool geometry with where each value came from. Takes `stock`, per-tool `tools` overrides and `resolution` |
+| `program_info` | What was read from comments and macro variables, with each value's line and text, without simulating. Pass a few comment lines as `gcode` to try detection settings |
+| `get_settings` / `update_settings` / `reset_settings` | View and change the server's saved settings, mainly comment detection (`comment_aliases`, `comment_rules`, `variable_rules`, `check.fuzz_threshold`) and tool defaults |
+
+Programs are passed as a file `path` or inline `gcode`. Each call uses the
+first config it finds: `config_path`, an `emucraft.toml` next to the program,
+then the saved settings. The saved settings are an ordinary emucraft JSON
+config at `~/.config/emucraft/mcp.json` (override with
+`EMUCRAFT_MCP_CONFIG`), so `emucraft check -c` can use them too. Every
+result names the config it used.
 
 ## Web Deployment
 The Docker image runs the web viewer (`emucraft serve`) on port 8000.  It has no authentication of its own - it's meant to sit behind a reverse proxy (Caddy) that handles that.
@@ -271,11 +329,11 @@ The viewer lists the bundled `examples/` plus anything in `/programs` inside the
 
 The image includes Moonshot: its page is `/moonshot/`, with its models and runs in the `moonshot-web` volume (`/data`).
 
-Moonshot's MCP server is a separate image and service, behind the `mcp` profile so it only runs when asked for:
+Moonshot's MCP server is a separate image and service, behind the `moonshot-mcp` profile so it only runs when asked for:
 
 ```bash
 docker build --target moonshot-mcp -t moonshot-mcp .
-MOONSHOT_TOKEN=... docker compose --profile mcp up -d --build     # streamable HTTP at moonshot-mcp:8000/mcp
+MOONSHOT_TOKEN=... docker compose --profile moonshot-mcp up -d --build     # streamable HTTP at moonshot-mcp:8000/mcp
 ```
 
 Its data (`moonshot-mcp` volume) is separate from the web page's. Set `MOONSHOT_TOKEN` (and `MOONSHOT_URL`, its

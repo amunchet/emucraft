@@ -21,7 +21,7 @@ jobs:
       - name: Kernel unit tests
         run: make -C kernel native test
       - name: Install
-        run: pip install -e ".[dev]"
+        run: pip install -e ".[dev,mcp]"
       - name: Python tests (includes WebAssembly/native parity)
         run: python -m pytest -q
       - name: Check the examples

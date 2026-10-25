@@ -193,6 +193,49 @@ def test_custom_comment_rules():
     assert p.tool_notes[2].values == {"holder_diameter": 1.25}
 
 
+def test_label_aliases_forgive_typos_and_variants():
+    p = parse(
+        "T4 M6\n(HOLDER DIAMTER: 2.0)\n(Tool-Holder Length = 3.5)\n(LOC .75)\n"
+        "(SHANK DIA. 0.5)\n(CUTTER DIA: .375)\n(STOCK MIN Z: -1)\n"
+    )
+    assert p.tool_notes[4].values == {
+        "holder_diameter": 2.0, "holder_length": 3.5, "flute_length": 0.75,
+        "shank_diameter": 0.5, "diameter": 0.375,
+    }
+    assert p.stock_note == {"zmin": -1.0}
+    # only the typo is reported as a loose match
+    loose = [m for m in p.messages if m.code == "comment-label"]
+    assert [m.line for m in loose] == [1] and loose[0].level == "info"
+
+
+def test_label_aliases_do_not_cross_match():
+    p = parse(
+        "T4 M6\n(LOCK: 1)\n(STEPOVER: 0.125)\n(TOLERANCE:0.0003)\n(Gauge Length: 5.2)\n"
+        "(MAX X: 1.0)\n(Number of Flutes: 3)\n(Z MIN: -1.25)\n(ZMIN=-0.5)\n"
+    )
+    assert p.tool_notes[4].values == {"flutes": 3}
+    assert p.stock_note == {"xmax": 1.0}
+
+
+def test_label_alias_settings():
+    text = "T4 M6\n(HOLDER DIAMTER: 2.0)\n(GAUGE FROM HOLDER: 1.4)\n"
+    exact = Interpreter(fuzz_threshold=1.0).run(text)
+    assert 4 not in exact.tool_notes
+    custom = Interpreter(label_aliases={"tool.stickout": ["gauge from holder"]}).run(text)
+    assert custom.tool_notes[4].values == {"stickout": 1.4}  # holder aliases replaced
+    assert 4 not in Interpreter(label_aliases={}).run(text).tool_notes
+
+
+def test_comment_unit_suffix():
+    p = parse("G20\nT1 M6\n(SHANK DIA: 12.7mm)\n(FLUTE LENGHT: 25.4 MM)\n(TIP ANGLE: 90 in)\n")
+    assert p.tool_notes[1].values == pytest.approx({"shank_diameter": 0.5, "flute_length": 1.0, "tip_angle": 90.0})
+    p = parse("G21\nT1 M6\n(HOLDER DIA: 1.5\")\n(DIAMETER: 6mm)\n")
+    assert p.tool_notes[1].values == pytest.approx({"holder_diameter": 38.1, "diameter": 6.0})
+    # before the units are known the value is kept as written
+    p = parse("(SHANK DIA: 6mm)\nG21\nG0 X1\n")
+    assert p.tool_notes[0].values == {"shank_diameter": 6.0}
+
+
 # ------------------------------------------------------------------ macros
 
 

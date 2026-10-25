@@ -218,6 +218,21 @@ def test_rapid_crash_is_reported_on_the_crashing_line():
         assert issues(result) == [("rapid-cut", "error", 12, 12)]
 
 
+PECK = STOCK + FLAT + "T1 M6\n(STICKOUT: 0.5)\n(HOLDER DIAMETER: 1.0)\n(FLUTE LENGTH: 1.0)\nS1000 M3\nG0 X1 Y1 Z1.\n"
+
+
+def test_peck_cycle_is_checked_along_the_whole_hole():
+    """G83 holes are swept from R to the bottom and back, not only checked at the bottom."""
+    assert check_text(PECK + "G83 G98 Z-0.4 R0.1 Q0.15 F10.\nG80\nG0 Z1.\n", "peck", coarse()).issues == []
+    deep = check_text(PECK + "G83 G98 Z-0.6 R0.1 Q0.15 F10.\nG80\nG0 Z1.\n", "peck", coarse())
+    assert issues(deep) == [("holder", "error", 14, 14)]
+    assert deep.issues[0].depth == pytest.approx(0.1, abs=1e-3)  # holder bottom 0.5 above Z-0.6
+    # The rapid down to an R plane inside the stock is caught too
+    low_r = check_text(PECK + "G83 G99 Z-0.4 R-0.2 Q0.15 F10.\nG80\nG0 Z1.\n", "peck", coarse())
+    assert issues(low_r) == [("rapid-cut", "error", 14, 14)]
+    assert low_r.issues[0].depth == pytest.approx(0.2, abs=1e-3)
+
+
 def test_threads_do_not_change_the_result():
     one = check_file(EXAMPLES / "crash_demo.nc", cell=0.005, threads=1)
     many = check_file(EXAMPLES / "crash_demo.nc", cell=0.005, threads=4)

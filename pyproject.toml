@@ -14,6 +14,7 @@ dependencies = ["tomli>=1.1; python_version < '3.11'"]
 
 [project.optional-dependencies]
 dev = ["pytest>=7"]
+mcp = ["mcp>=2; python_version >= '3.10'"]
 # Moonshot (Python 3.10+): the planner, its pictures, and its page in `emucraft serve`
 moonshot = ["numpy>=1.24", "scipy>=1.14", "numba>=0.59", "trimesh>=4.0", "matplotlib>=3.7", "pillow>=10",
             "shapely>=2", "fast-simplification"]
