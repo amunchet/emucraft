@@ -24,7 +24,11 @@ const PRESETS = {
   acrylic: { label: 'Black acrylic (cast)', color: '#0a0a0c', metal: 0, rough: 0.06, clearcoat: 1, mark: '#d2d2d2', mark_metal: 0, mark_rough: 0.8, mark_full: 0.02, preview: '#ff7a3d' },
   walnut: { label: 'Walnut', color: '#ffffff', metal: 0, rough: 0.62, mark: '#1f1109', mark_metal: 0, mark_rough: 0.92, mark_full: 0.08, tex: 'walnut', preview: '#7fd4ff' },
   maple: { label: 'Maple', color: '#ffffff', metal: 0, rough: 0.58, mark: '#2e1a0c', mark_metal: 0, mark_rough: 0.9, mark_full: 0.08, tex: 'maple', preview: '#1a4fd8' },
-  slate: { label: 'Slate', color: '#ffffff', metal: 0, rough: 0.82, mark: '#b9bcb8', mark_metal: 0, mark_rough: 0.95, mark_full: 0.01, tex: 'slate', preview: '#ff7a3d' },
+  slate: { label: 'Slate', color: '#ffffff', metal: 0, rough: 0.82, mark: '#b9bcb8', mark_metal: 0, mark_rough: 0.95, mark_full: 0.01, tex: 'slate', bump: 0.6, preview: '#ff7a3d' },
+  // Altamont Super Woods (Dymondwood): dyed birch laminates under a satin lacquer; the laser chars through to dark brown.
+  super_rosewood: { label: 'Super Rosewood (red Dymondwood)', color: '#ffffff', metal: 0, rough: 0.42, clearcoat: 0.35, clearcoat_rough: 0.25, mark: '#24100c', mark_metal: 0, mark_rough: 0.93, mark_full: 0.05, tex: 'super_rosewood', bump: 0.02, preview: '#7fd4ff' },
+  super_blackwood: { label: 'Super Blackwood (black Dymondwood)', color: '#ffffff', metal: 0, rough: 0.42, clearcoat: 0.35, clearcoat_rough: 0.25, mark: '#171512', mark_metal: 0, mark_rough: 0.96, mark_full: 0.05, tex: 'super_blackwood', bump: 0.02, preview: '#ff7a3d' },
+  super_walnut: { label: 'Super Walnut (brown Dymondwood)', color: '#ffffff', metal: 0, rough: 0.42, clearcoat: 0.35, clearcoat_rough: 0.25, mark: '#22120a', mark_metal: 0, mark_rough: 0.93, mark_full: 0.05, tex: 'super_walnut', bump: 0.02, preview: '#7fd4ff' },
 };
 
 const state = {
@@ -242,7 +246,15 @@ function fbm(x, y, px, py, octaves) {
 
 const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 const tex_cache = {};
-// Build (once) the maps for a procedural texture kind: wood grain runs along X, brushing along X.
+// Dymondwood albedo palettes from Altamont product photos (darkened to take out the studio lighting):
+// [share, rgb] layer dyes, then the glue-line colour.
+const LAMINATES = {
+  super_rosewood: { dyes: [[0.7, [112, 26, 20]], [0.2, [70, 12, 9]], [0.1, [140, 48, 38]]], glue: [28, 7, 6] },
+  super_blackwood: { dyes: [[0.5, [34, 33, 32]], [0.25, [20, 19, 18]], [0.13, [84, 82, 80]], [0.12, [66, 50, 40]]], glue: [10, 10, 9] },
+  super_walnut: { dyes: [[0.65, [150, 74, 38]], [0.22, [104, 44, 20]], [0.13, [172, 100, 62]]], glue: [52, 22, 10] },
+};
+// Build (once) the maps for a procedural texture kind: wood grain runs along X, brushing along X, laminate
+// veneers along Y (the length of a grip panel).
 function procedural_maps(kind) {
   if (tex_cache[kind]) return tex_cache[kind];
   const N = 1024;
@@ -252,6 +264,7 @@ function procedural_maps(kind) {
   const img = ctx.createImageData(N, N);
   const px = img.data;
   const wood = { walnut: [[128, 86, 54], [58, 35, 20], 24], maple: [[236, 211, 166], [196, 154, 100], 30] }[kind];
+  const lam = LAMINATES[kind];
   for (let y = 0; y < N; y++) {
     const v = y / N;
     for (let x = 0; x < N; x++) {
@@ -264,6 +277,14 @@ function procedural_maps(kind) {
         const pores = fbm(u * 32, v * 128, 32, 128, 2);
         const t = Math.min(1, Math.max(0, ring + (pores - 0.5) * 0.4 + (fbm(u * 4, v * 8, 4, 8, 2) - 0.5) * 0.25));
         r = light[0] + (dark[0] - light[0]) * t; g = light[1] + (dark[1] - light[1]) * t; b = light[2] + (dark[2] - light[2]) * t;
+      } else if (lam) {
+        // 144 veneers (~0.55 mm at the default 80 mm scale) with a slow drift; each gets a dye from the palette
+        const s = u * 144 + (fbm(u * 2, v * 2, 2, 2, 3) - 0.5) * 1.2, layer = ((Math.floor(s) % 144) + 144) % 144, f = s - Math.floor(s);
+        let pick = noise_vals[(layer * 2654435761 >>> 16) & 65535], rgb = lam.dyes[lam.dyes.length - 1][1];
+        for (const [share, c] of lam.dyes) { if (pick < share) { rgb = c; break; } pick -= share; }
+        const t = 1 + (fbm(u * 64, v * 256, 64, 256, 2) - 0.5) * 0.18 + (noise_vals[layer * 131 & 65535] - 0.5) * 0.12;
+        const glue = 0.6 * (1 - smooth(0.0, 0.1, f));
+        [r, g, b] = rgb.map((c, i) => (c * t) * (1 - glue) + lam.glue[i] * glue);
       } else if (kind === 'brushed') {
         const t = 0.82 + (fbm(u * 8, v * 256, 8, 256, 2) - 0.5) * 0.35 + (fbm(u * 2, v * 64, 2, 64, 2) - 0.5) * 0.15;
         r = g = b = 255 * t;
@@ -280,7 +301,7 @@ function procedural_maps(kind) {
   map.colorSpace = THREE.SRGBColorSpace;
   const maps = { map };
   if (kind === 'brushed') maps.roughnessMap = new THREE.CanvasTexture(cv);
-  if (kind === 'slate' || wood) maps.bumpMap = new THREE.CanvasTexture(cv);
+  if (kind === 'slate' || wood || lam) maps.bumpMap = new THREE.CanvasTexture(cv);
   for (const t of Object.values(maps)) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; }
   return (tex_cache[kind] = maps);
 }
@@ -298,11 +319,11 @@ function apply_material() {
     m.roughness = Number($('m_rough').value);
     m.metalness = Number($('m_metal').value);
     m.clearcoat = p.clearcoat || 0;
-    m.clearcoatRoughness = 0.03;
+    m.clearcoatRoughness = p.clearcoat_rough ?? 0.03;
     m.map = maps.map || null;
     m.roughnessMap = maps.roughnessMap || null;
     m.bumpMap = maps.bumpMap || null;
-    m.bumpScale = p.tex === 'slate' ? 0.6 : 0.08;
+    m.bumpScale = p.bump ?? 0.08;
     m.wireframe = $('v_wire').checked;
     m.needsUpdate = true;
   }
