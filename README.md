@@ -261,7 +261,7 @@ Workflow:
 1. **Align**: the image is projected straight down onto the model. Drag to move it, Shift+drag to rotate (hold Ctrl as well to snap to 15°), Alt/Ctrl+wheel to scale, or type values. By default one pixel is one spot at focus; "Fit to model" scales the image to the part instead.
 2. **Laser**: set spot size at focus, lens focal length, beam diameter at the lens, focus offset, power and rated power, depth per pass, passes, ablation threshold and gamma.
 3. **Simulate**: runs in a Web Worker (`src/worker.js` → `src/sim.js`).
-4. **Result**: choose a material preset (anodized aluminium, stainless, brass, acrylic, walnut, maple, slate) or upload a custom texture. Adjust lighting and exposure. Export a GLB for the website or a PNG screenshot.
+4. **Result**: choose a material preset (anodized aluminium, stainless, brass, acrylic, walnut, maple, slate, and Altamont's Super Rosewood / Super Blackwood / Super Walnut Dymondwood) or upload a custom texture. The Dymondwood presets are dyed veneers stacked in Z and coloured by height, so a flat face shows one layer, curvature shows contour bands, and deep cuts expose the layers underneath. The texture scale sets the veneer thickness: scale ÷ 144, so the default 80 mm gives about 0.55 mm. Adjust lighting and exposure. Export a GLB for the website or a PNG screenshot.
 
 Model (`laser/src/sim.js`):
 - The top surface under the image is rasterized into a height grid. The grid uses the image pixels, optionally supersampled, and is capped at 4M cells.
@@ -269,7 +269,7 @@ Model (`laser/src/sim.js`):
 - The focal plane sits at the highest point under the footprint, plus the focus offset.
 - Passes are simulated in up to 24 steps. In each step every cell removes `max(0, grey · power/max · (spot/d)² − threshold) / (1 − threshold) · depth_per_pass`. That removal is spread by a Gaussian with σ = d/4, using the cell's own current defocus. Deeper cuts therefore grow wider, shallower and fuzzier.
 
-Sample: `laser/samples/` has a parametric full-size 1911 grip panel (`node make_1911_grip.mjs` writes `1911_grip.stl`) and a full-coverage design that bleeds past the panel edges (`1911_grip_design.png`, drawn by `make_1911_bitmap.mjs`, which needs playwright and a Chromium). Load both, then set W = 47 mm (aspect locked), X = Y = 0.125 and angle 0 to line the design up with the panel.
+Sample: `laser/samples/` has a parametric full-size 1911 grip panel with a strong crown (7.6 mm thick at the centre, ~3.3 mm at the edges before the round-over) (`node make_1911_grip.mjs` writes `1911_grip.stl`) and a full-coverage design that bleeds past the panel edges (`1911_grip_design.png`, drawn by `make_1911_bitmap.mjs`, which needs playwright and a Chromium). Load both, then set W = 47 mm (aspect locked), X = Y = 0.125 and angle 0 to line the design up with the panel.
 
 Limitations and next steps: STEP/IGES import (would need occt-import-js), lasers that don't fire straight down or rotary axes, heightmap export, and splitting the 720 kB bundle into smaller chunks.
 

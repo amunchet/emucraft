@@ -33,9 +33,10 @@ function dist(x, y) {
   return d;
 }
 
-// Crowned outer face (6.4 mm on the centreline, ~4.5 mm at the long edges) with a quarter-round edge.
+// Strongly crowned outer face (7.6 mm on the centreline, ~3.3 mm at the long edges, ends arched 1.4 mm lower)
+// with a quarter-round edge.
 function top(x, y, d) {
-  const crown = 4.3 + 2.1 * (1 - (x / 22) ** 2) - 0.25 * (y / 54) ** 2;
+  const crown = 2.4 + 5.2 * Math.max(0, 1 - (x / 23) ** 2) ** 0.85 - 1.4 * (y / 54) ** 2;
   const e = d >= EDGE_R ? 1 : Math.sqrt(1 - ((EDGE_R - d) / EDGE_R) ** 2);
   return LIP + (crown - LIP) * e;
 }

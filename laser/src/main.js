@@ -249,12 +249,12 @@ const tex_cache = {};
 // Dymondwood albedo palettes from Altamont product photos (darkened to take out the studio lighting):
 // [share, rgb] layer dyes, then the glue-line colour.
 const LAMINATES = {
-  super_rosewood: { dyes: [[0.7, [112, 26, 20]], [0.2, [70, 12, 9]], [0.1, [140, 48, 38]]], glue: [28, 7, 6] },
+  super_rosewood: { dyes: [[0.7, [98, 22, 16]], [0.2, [62, 10, 8]], [0.1, [126, 40, 30]]], glue: [28, 7, 6] },
   super_blackwood: { dyes: [[0.5, [34, 33, 32]], [0.25, [20, 19, 18]], [0.13, [84, 82, 80]], [0.12, [66, 50, 40]]], glue: [10, 10, 9] },
   super_walnut: { dyes: [[0.65, [150, 74, 38]], [0.22, [104, 44, 20]], [0.13, [172, 100, 62]]], glue: [52, 22, 10] },
 };
-// Build (once) the maps for a procedural texture kind: wood grain runs along X, brushing along X, laminate
-// veneers along Y (the length of a grip panel).
+// Build (once) the maps for a procedural texture kind: wood grain runs along X, brushing along X. Laminates are
+// stacked veneers: texture v is height (z) and u runs sideways, see uv_laminate().
 function procedural_maps(kind) {
   if (tex_cache[kind]) return tex_cache[kind];
   const N = 1024;
@@ -278,11 +278,12 @@ function procedural_maps(kind) {
         const t = Math.min(1, Math.max(0, ring + (pores - 0.5) * 0.4 + (fbm(u * 4, v * 8, 4, 8, 2) - 0.5) * 0.25));
         r = light[0] + (dark[0] - light[0]) * t; g = light[1] + (dark[1] - light[1]) * t; b = light[2] + (dark[2] - light[2]) * t;
       } else if (lam) {
-        // 144 veneers (~0.55 mm at the default 80 mm scale) with a slow drift; each gets a dye from the palette
-        const s = u * 144 + (fbm(u * 2, v * 2, 2, 2, 3) - 0.5) * 1.2, layer = ((Math.floor(s) % 144) + 144) % 144, f = s - Math.floor(s);
+        // 144 veneers (~0.55 mm at the default 80 mm scale), pressed very slightly uneven (gentle slopes stretch
+        // any wobble into wide ragged bands); each gets a dye from the palette
+        const s = v * 144 + (fbm(u * 2, v * 2, 2, 2, 2) - 0.5) * 0.2, layer = ((Math.floor(s) % 144) + 144) % 144, f = s - Math.floor(s);
         let pick = noise_vals[(layer * 2654435761 >>> 16) & 65535], rgb = lam.dyes[lam.dyes.length - 1][1];
         for (const [share, c] of lam.dyes) { if (pick < share) { rgb = c; break; } pick -= share; }
-        const t = 1 + (fbm(u * 64, v * 256, 64, 256, 2) - 0.5) * 0.18 + (noise_vals[layer * 131 & 65535] - 0.5) * 0.12;
+        const t = 1 + (fbm(u * 16, v * 144, 16, 256, 2) - 0.5) * 0.08 + (noise_vals[layer * 131 & 65535] - 0.5) * 0.12;
         const glue = 0.6 * (1 - smooth(0.0, 0.1, f));
         [r, g, b] = rgb.map((c, i) => (c * t) * (1 - glue) + lam.glue[i] * glue);
       } else if (kind === 'brushed') {
@@ -306,6 +307,17 @@ function procedural_maps(kind) {
   return (tex_cache[kind] = maps);
 }
 
+// Laminates are coloured by height: their texture coordinates are (x + y, z) in mm instead of the planar/box ones.
+const uv_laminate = () => !state.material.custom_texture && !!LAMINATES[PRESETS[state.material.preset].tex];
+// Point each mesh's 'uv' at the coordinate set the current material needs.
+function apply_uv_mode() {
+  const key = uv_laminate() ? 'uv_lam' : 'uv_box';
+  for (const mesh of [base_mesh, res_mesh]) {
+    const a = mesh.geometry.getAttribute(key);
+    if (a && mesh.geometry.getAttribute('uv') !== a) mesh.geometry.setAttribute('uv', a);
+  }
+}
+
 // ---------- material / lighting application ----------
 // Push the material panel values into both materials and the mark uniforms.
 function apply_material() {
@@ -327,6 +339,7 @@ function apply_material() {
     m.wireframe = $('v_wire').checked;
     m.needsUpdate = true;
   }
+  apply_uv_mode();
   U.u_mark.value.set($('m_mark').value);
   U.u_mark_pbr.value.set(Number($('m_mark_rough').value), Number($('m_mark_metal').value), p.mark_full);
   U.u_preview.value.set(p.preview);
@@ -579,7 +592,7 @@ function set_model(positions, name) {
   g.setAttribute('position', new THREE.BufferAttribute(positions.slice(), 3));
   const shown = toCreasedNormals(g, THREE.MathUtils.degToRad(30));
   // box-projected UVs in mm (texture repeat sets the physical tile size)
-  const p = shown.getAttribute('position').array, uv = new Float32Array((p.length / 3) * 2);
+  const p = shown.getAttribute('position').array, uv = new Float32Array((p.length / 3) * 2), uv_lam = new Float32Array(uv.length);
   const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
   for (let t = 0; t < p.length; t += 9) {
     a.fromArray(p, t); b.fromArray(p, t + 3); c.fromArray(p, t + 6);
@@ -588,11 +601,14 @@ function set_model(positions, name) {
     for (let v = 0; v < 3; v++) {
       const x = p[t + v * 3], y = p[t + v * 3 + 1], z = p[t + v * 3 + 2], o = (t / 3 + v) * 2;
       if (az >= ax && az >= ay) { uv[o] = x; uv[o + 1] = y; } else if (ax >= ay) { uv[o] = y; uv[o + 1] = z; } else { uv[o] = x; uv[o + 1] = z; }
+      uv_lam[o] = x + y; uv_lam[o + 1] = z;
     }
   }
-  shown.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  shown.setAttribute('uv_box', new THREE.BufferAttribute(uv, 2));
+  shown.setAttribute('uv_lam', new THREE.BufferAttribute(uv_lam, 2));
   base_mesh.geometry.dispose();
   base_mesh.geometry = shown;
+  apply_uv_mode();
   clear_result();
   state.placement.cx = state.placement.cy = 0;
   sync_placement();
@@ -815,7 +831,7 @@ function build_result(k_exag) {
   const n = gw * gh, z = new Float32Array(n);
   for (let k = 0; k < n; k++) z[k] = surface[k] - k_exag * depth[k]; // NaN cells stay NaN
   const pw = P.width_mm / gw, ph = P.height_mm / gh, c = Math.cos(P.angle), s = Math.sin(P.angle);
-  const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), uv = new Float32Array(n * 2), uvg = new Float32Array(n * 2);
+  const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), uv = new Float32Array(n * 2), uvl = new Float32Array(n * 2), uvg = new Float32Array(n * 2);
   for (let j = 0; j < gh; j++) {
     const ly = (0.5 - (j + 0.5) / gh) * P.height_mm;
     for (let i = 0; i < gw; i++) {
@@ -823,6 +839,7 @@ function build_result(k_exag) {
       const x = P.cx + c * lx - s * ly, y = P.cy + s * lx + c * ly;
       pos[idx * 3] = x; pos[idx * 3 + 1] = y; pos[idx * 3 + 2] = Number.isNaN(z[idx]) ? 0 : z[idx]; // NaN cells are unreferenced
       uv[idx * 2] = x; uv[idx * 2 + 1] = y;
+      uvl[idx * 2] = x + y; uvl[idx * 2 + 1] = pos[idx * 3 + 2];
       uvg[idx * 2] = (i + 0.5) / gw; uvg[idx * 2 + 1] = (j + 0.5) / gh;
       if (Number.isNaN(z[idx])) { nor[idx * 3 + 2] = 1; continue; } // keep unit normals so GLB export stays valid
       const il = i > 0 && !Number.isNaN(z[idx - 1]) ? idx - 1 : idx, ir = i < gw - 1 && !Number.isNaN(z[idx + 1]) ? idx + 1 : idx;
@@ -847,7 +864,7 @@ function build_result(k_exag) {
     }
   }
   // skirt: an edge with a triangle on one side only is on the border; its wall faces that triangle's third vertex
-  const sk = { pos: [], nor: [], uv: [], uvg: [], dep: [], index: [] };
+  const sk = { pos: [], nor: [], uv: [], uvl: [], uvg: [], dep: [], index: [] };
   const wall = (p, q, o) => {
     if (k_exag * Math.max(depth[p], depth[q]) < 1e-6) return;
     const ex = pos[q * 3] - pos[p * 3], ey = pos[q * 3 + 1] - pos[p * 3 + 1];
@@ -857,6 +874,7 @@ function build_result(k_exag) {
       sk.pos.push(pos[k * 3], pos[k * 3 + 1], top ? surface[k] : z[k]);
       sk.nor.push(nx / len, ny / len, 0);
       sk.uv.push(uv[k * 2], uv[k * 2 + 1]);
+      sk.uvl.push(uvl[k * 2], top ? surface[k] : z[k]);
       sk.uvg.push(uvg[k * 2], uvg[k * 2 + 1]);
       sk.dep.push(depth[k]);
     }
@@ -879,7 +897,9 @@ function build_result(k_exag) {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', join(pos, sk.pos, 3));
   g.setAttribute('normal', join(nor, sk.nor, 3));
-  g.setAttribute('uv', join(uv, sk.uv, 2));
+  g.setAttribute('uv_box', join(uv, sk.uv, 2));
+  g.setAttribute('uv_lam', join(uvl, sk.uvl, 2));
+  g.setAttribute('uv', g.getAttribute(uv_laminate() ? 'uv_lam' : 'uv_box'));
   g.setAttribute('uv_grid', join(uvg, sk.uvg, 2));
   g.setAttribute('depth', join(depth, sk.dep, 1));
   const all = new Uint32Array(m + sk.index.length);
@@ -1035,14 +1055,15 @@ async function export_glb() {
       const px = Math.min(m.w - 1, Math.floor(fu * m.w)), py = Math.min(m.h - 1, Math.floor((m.t.flipY ? 1 - fv : fv) * m.h));
       return m.d[(py * m.w + px) * 4 + ch] / 255;
     };
-    const map = pixels(base_mat.map), rmap = pixels(base_mat.roughnessMap);
+    const map = pixels(base_mat.map), rmap = pixels(base_mat.roughnessMap), lam = uv_laminate();
     const [mark_rough, mark_metal, full] = U.u_mark_pbr.value.toArray();
     const cv_col = document.createElement('canvas'), cv_mr = document.createElement('canvas');
     cv_col.width = cv_mr.width = gw;
     cv_col.height = cv_mr.height = gh;
     const img_col = new ImageData(gw, gh), img_mr = new ImageData(gw, gh), col = new THREE.Color(), srgb = {};
     for (let k = 0; k < gw * gh; k++) {
-      const x = wpos[k * 3], y = wpos[k * 3 + 1], t = Math.min(1, Math.max(0, depth[k] / full)), lm = t * t * (3 - 2 * t) * 0.96;
+      const x = lam ? wpos[k * 3] + wpos[k * 3 + 1] : wpos[k * 3], y = lam ? wpos[k * 3 + 2] : wpos[k * 3 + 1];
+      const t = Math.min(1, Math.max(0, depth[k] / full)), lm = t * t * (3 - 2 * t) * 0.96;
       if (map) col.setRGB(sample(map, x, y, 0), sample(map, x, y, 1), sample(map, x, y, 2), THREE.SRGBColorSpace).multiply(base_mat.color);
       else col.copy(base_mat.color);
       col.lerp(U.u_mark.value, lm).getRGB(srgb, THREE.SRGBColorSpace);
@@ -1056,8 +1077,7 @@ async function export_glb() {
     tex_col.colorSpace = THREE.SRGBColorSpace;
     tex_col.flipY = tex_mr.flipY = false; // grid row 0 is the top of the image, as glTF expects at v = 0
     g.setAttribute('uv', g.getAttribute('uv_grid'));
-    g.deleteAttribute('uv_grid');
-    g.deleteAttribute('depth');
+    for (const a of ['uv_grid', 'uv_box', 'uv_lam', 'depth']) g.deleteAttribute(a);
     group.add(new THREE.Mesh(g, new THREE.MeshPhysicalMaterial({
       map: tex_col, roughnessMap: tex_mr, metalnessMap: tex_mr, roughness: 1, metalness: 1,
       clearcoat: base_mat.clearcoat, clearcoatMap: base_mat.clearcoat ? tex_mr : null, clearcoatRoughness: base_mat.clearcoatRoughness,

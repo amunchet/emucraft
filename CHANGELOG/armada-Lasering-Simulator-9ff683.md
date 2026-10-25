@@ -21,3 +21,6 @@ Added a laser test sample in `laser/samples/`. It is a generated, watertight 191
 
 ## 2026-10-24 19:23 CDT
 Added Altamont Super Wood (Dymondwood) material presets: Super Rosewood (red), Super Blackwood (black) and Super Walnut (brown). Each is a procedural dyed-birch laminate with veneers running along the grip and dark glue lines between them. The palettes were sampled from Altamont 1911 product photos on the staging site and darkened to take out the studio lighting. The finish is a satin lacquer. Laser marks are a dark matte char that removes the lacquer. Presets can now set their own clearcoat roughness and bump strength.
+
+## 2026-10-24 20:15 CDT
+Fixed the Dymondwood presets: the veneers are now stacked in Z, as the real laminate is, instead of running side by side across X. Laminate materials use (x + y, z) texture coordinates on the model, the engraved heightfield, its skirt walls and the GLB bake. A flat face therefore shows a single veneer, curvature in XZ or YZ shows contour bands, and engraving reveals the layers below. Smoothed the layer boundaries so gentle slopes give clean bands, and darkened Super Rosewood. Gave the 1911 sample grip a much stronger crown (7.6 mm at the centre, ~3.3 mm at the long edges, ends arched 1.4 mm) so the laminate banding and defocus have real curvature to work with.
