@@ -1,5 +1,5 @@
-"""Moonshot's web API end to end, over real HTTP through `emucraft serve`: upload, plan, the 3D scene, the robot
-program in the run's coordinates, and file downloads."""
+"""Moonshot's web server end to end, over real HTTP: the page, upload, plan, the 3D scene, the robot program in
+the run's coordinates, and file downloads."""
 import base64
 import gzip
 import json
@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 from scipy.spatial import cKDTree
 
-from emucraft.server import make_server
+from moonshot.web import make_server
 
 SAMPLE = Path(__file__).resolve().parents[2] / "samples" / "wave_plate.stl"
 
@@ -51,7 +51,7 @@ def wait(api, run_id, count):
 
 @pytest.fixture(scope="module")
 def site(tmp_path_factory):
-    srv = make_server("127.0.0.1", 0, moonshot_data=tmp_path_factory.mktemp("moonshot"))
+    srv = make_server("127.0.0.1", 0, tmp_path_factory.mktemp("moonshot"))
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     yield f"http://127.0.0.1:{srv.server_address[1]}"
     srv.shutdown()
@@ -62,7 +62,7 @@ def site(tmp_path_factory):
 def planned(site):
     """The wave plate uploaded as raw bytes, planned coarsely with tracking, and its robot program written in a
     part frame that is moved and turned, so reading the program back has to undo it."""
-    api = f"{site}/api/moonshot"
+    api = f"{site}/api"
     status, model = request(f"{api}/models/plate.stl", "PUT", raw=SAMPLE.read_bytes())
     assert status == 200, model
     _, queued = request(f"{api}/runs", "POST", {"model_id": model["model_id"], "spacing": 0.05})
@@ -75,10 +75,13 @@ def planned(site):
 
 
 def test_page_is_served(site):
-    status, page = request(f"{site}/moonshot/")
-    assert status == 200 and b"/js/moonshot.js" in page
-    status, script = request(f"{site}/js/moonshot.js")
-    assert status == 200 and b"/api/moonshot" in script
+    status, page = request(f"{site}/")
+    assert status == 200 and b"/moonshot.js" in page
+    status, script = request(f"{site}/moonshot.js")
+    assert status == 200 and b"/js/viewer.js" in script
+    for shared in ("/js/viewer.js", "/js/util.js", "/css/app.css", "/vendor/three/three.module.min.js"):
+        assert request(site + shared)[0] == 200, shared  # borrowed from the G-code viewer
+    assert request(f"{site}/..%2Fpyproject.toml")[0] == 404
 
 
 def test_models_and_samples(planned):
@@ -134,7 +137,7 @@ def test_program_contacts_land_on_the_part(planned):
 
 def test_files_download_and_stay_inside_the_run(planned):
     api, _, run = planned
-    site = api[:-len("/api/moonshot")]
+    site = api[:-len("/api")]
     _, files = request(f"{api}/runs/{run['run_id']}/files")
     paths = {f["path"] for f in files}
     assert {"summary.json", "orientations.csv", "fanuc/sand.ls"} <= paths

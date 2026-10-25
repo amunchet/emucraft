@@ -15,7 +15,7 @@ dependencies = ["tomli>=1.1; python_version < '3.11'"]
 [project.optional-dependencies]
 dev = ["pytest>=7"]
 mcp = ["mcp>=2; python_version >= '3.10'"]
-# Moonshot (Python 3.10+): the planner, its pictures, and its page in `emucraft serve`
+# Moonshot (Python 3.10+): the planner, its pictures, and its web page (moonshot-web)
 moonshot = ["numpy>=1.24", "scipy>=1.14", "numba>=0.59", "trimesh>=4.0", "matplotlib>=3.7", "pillow>=10",
             "shapely>=2", "fast-simplification"]
 step = ["cascadio"]
@@ -26,6 +26,7 @@ moonshot-dev = ["emucraft[moonshot-mcp]", "pytest>=7", "httpx", "rtree", "scikit
 [project.scripts]
 emucraft = "emucraft.cli:main"
 moonshot = "moonshot.pipeline:main"
+moonshot-web = "moonshot.web:main"
 moonshot-mcp = "moonshot.server:main"
 
 [tool.setuptools]
@@ -36,6 +37,7 @@ version = { attr = "emucraft.__version__" }
 
 [tool.setuptools.package-data]
 emucraft = ["web/*", "web/**/*", "_kernel/*"]
+moonshot = ["page/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

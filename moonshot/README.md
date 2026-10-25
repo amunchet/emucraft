@@ -492,8 +492,9 @@ and takes about 100 minutes on 4 CPU threads.
 
 ## The web page
 
-`emucraft serve` has a Moonshot page at `/moonshot/` (linked from the G-code viewer's top bar). It needs
-`pip install -e ".[moonshot]"`; without it the G-code viewer runs as before and the page says what is missing.
+`moonshot-web` (or `python -m moonshot.web`) serves Moonshot's page on http://127.0.0.1:8766/; it needs
+`pip install -e ".[moonshot]"`. Deployed, it is its own Docker image, `moonshot/Dockerfile`, built from the
+repository root (see the main README's Web Deployment).
 
 - **Models.** Upload a model (or drop it on the page), or add one of the samples.
 - **Plan.** Every option of the command line, with its default. Planning is queued and its log follows live; a
@@ -505,22 +506,25 @@ and takes about 100 minutes on 4 CPU threads.
   it back, or scrub through it, with the drum at each point.
 - **Run and Files.** Results, the step pictures and GIFs (queued like planning), and every file to download.
 
-Its models and runs live in `--moonshot-data` (default `./moonshot-data`, `/data` in the image). The API behind it
-is listed in `moonshot/web.py`.
+Its models and runs live in `--data` (default `./moonshot-data`, `/data` in the image). The page is in
+`moonshot/page/` and borrows the G-code viewer's 3D viewer, helpers, stylesheet and three.js from `emucraft/web/`.
+The API behind it is listed in `moonshot/web.py`. It has no authentication: deployed, put it behind a proxy that
+has some.
 
 ## MCP server
 
 `python -m moonshot.server` (or `moonshot-mcp`) serves the whole pipeline over the
 [Model Context Protocol](https://modelcontextprotocol.io). A client uploads a model, plans it, renders its
 pictures and GIFs, writes the robot program, and downloads any of it. Install with `pip install -e ".[moonshot-mcp]"`.
-It is a separate process from the web page in `emucraft serve` (see [The web page](#the-web-page)), with its own data
-directory; both use the same job store, `moonshot/store.py`.
+It is a separate process from the web page (see [The web page](#the-web-page)), with its own data directory; both
+use the same job store, `moonshot/store.py`.
 
 ```bash
 python -m moonshot.server                                   # stdio, for a local client (Claude Code, Desktop)
 python -m moonshot.server --http --host 0.0.0.0 --port 8000 # streamable HTTP at /mcp
-docker build --target moonshot-mcp -t moonshot-mcp . && docker run -p 8000:8000 -v moonshot-data:/data \
-    -e MOONSHOT_TOKEN=... -e MOONSHOT_URL=https://moonshot.example.com moonshot-mcp
+docker build -f moonshot/Dockerfile -t moonshot . && docker run -p 8000:8000 -v moonshot-mcp:/data \
+    -e MOONSHOT_TOKEN=... -e MOONSHOT_URL=https://moonshot.example.com moonshot \
+    python -m moonshot.server --http --host 0.0.0.0 --port 8000
 ```
 
 | Tool | What it does |
@@ -620,7 +624,7 @@ The tests cover the following:
   and reports its stats. Every file downloads in chunks to its listed sha256. Paths that climb out of a run are
   refused. Screenshots come back as PNGs and are saved, and the HTTP file routes and `/mcp` turn away requests
   without the token.
-- The web page's API through a real `emucraft serve`: a model uploaded as raw bytes and a sample, a planned run whose
+- The web server over real HTTP: the page and the assets it borrows, a model uploaded as raw bytes and a sample, a planned run whose
   3D scene matches its results (each drum center a radius off its point, shifted by its tracking offset), a robot
   program written in a moved and turned part frame whose contacts land back on the part, downloads, and refused
   paths and options.

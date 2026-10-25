@@ -177,22 +177,3 @@ def test_open_optimized_copy_uses_the_originals_config(server):
     assert alone["report"]["tools"]["20"]["holder_diameter"] == 10.0  # the post's placeholder
     assert kept["report"]["tools"]["20"]["holder_diameter"] == 1.3  # examples/emucraft.toml
     assert kept["report"]["stats"]["link_feed"] == 700
-
-
-def test_moonshot_page_without_its_dependencies(monkeypatch):
-    """The G-code viewer runs without Moonshot installed; Moonshot's API says what is missing."""
-    import sys
-
-    monkeypatch.setitem(sys.modules, "moonshot", None)  # import moonshot now raises ImportError
-    srv = make_server("127.0.0.1", 0)
-    threading.Thread(target=srv.serve_forever, daemon=True).start()
-    base = f"http://127.0.0.1:{srv.server_address[1]}"
-    try:
-        status, _, page = get(base + "/moonshot/")
-        assert status == 200 and b"Moonshot" in page
-        with pytest.raises(urllib.error.HTTPError) as err:
-            get(base + "/api/moonshot/models")
-        assert err.value.code == 503 and b"pip install" in err.value.read()
-    finally:
-        srv.shutdown()
-        srv.server_close()

@@ -129,12 +129,12 @@ steps the contact along the drum between passes so it wears evenly, and writes a
 
 ```sh
 pip install -e ".[moonshot]"              # Python 3.10+: numpy, scipy, numba, trimesh, matplotlib
-emucraft serve --open                     # the Moonshot page is http://127.0.0.1:8765/moonshot/
+moonshot-web                              # its web page on http://127.0.0.1:8766/
 moonshot samples/wave_plate.stl --spacing 0.05 --track --out results/plate
 python -m moonshot.fanuc results/plate
 ```
 
-- **Web page** (`/moonshot/` in `emucraft serve`): upload a model or pick a sample, plan it, and look at the result
+- **Web page** (`moonshot-web`, its own server and Docker image): upload a model or pick a sample, plan it, and look at the result
   in 3D: reach, grain tilt, tracking and passes on every grid point, and the drum wherever you click. Write the
   robot program and play it back along the part, render the step pictures, and download every file.
 - **MCP server** (`moonshot-mcp`, `pip install -e ".[moonshot-mcp]"`): the same pipeline for an MCP client, run as
@@ -305,13 +305,21 @@ config at `~/.config/emucraft/mcp.json` (override with
 result names the config it used.
 
 ## Web Deployment
-The Docker image runs the web viewer (`emucraft serve`) on port 8000.  It has no authentication of its own - it's meant to sit behind a reverse proxy (Caddy) that handles that.
+Each web app has its own Docker image, and none has authentication of its own - they are meant to sit behind a reverse proxy (Caddy) that handles that:
+
+| Service | Image, built from | Serves |
+|---|---|---|
+| `emucraft` | `Dockerfile` | the G-code viewer (`emucraft serve`) on port 8000 |
+| `moonshot` | `moonshot/Dockerfile` (repository root as context) | Moonshot's web page (`moonshot-web`) on port 8000, models and runs in the `moonshot-web` volume |
+| `laser` | `laser/Dockerfile` | the laser engraving simulator, a static build served by nginx on port 80 |
+| `moonshot-mcp` | the `moonshot` image | Moonshot's MCP server on port 8000 (`/mcp`), its own `moonshot-mcp` volume; only with `--profile moonshot-mcp` |
 
 The compose file joins an **external** Docker network (`emucraft` by default, override with `EMUCRAFT_NETWORK`) and publishes no ports:
 
 ```bash
 docker network create emucraft   # once, if your Caddy stack doesn't already create it
-docker compose up -d --build
+docker compose up -d --build                                            # emucraft, moonshot, laser
+MOONSHOT_TOKEN=... docker compose --profile moonshot-mcp up -d --build  # also Moonshot's MCP server
 ```
 
 Then, in the Caddy stack (attached to the same network):
@@ -321,9 +329,16 @@ emucraft.example.com {
     # ...your auth...
     reverse_proxy emucraft:8000
 }
+moonshot.example.com {
+    # ...your auth...
+    reverse_proxy moonshot:8000
+}
+laser.example.com {
+    reverse_proxy laser:80
+}
 ```
 
-Serve it at the root of a (sub)domain: the viewer calls `/api/...` with absolute paths, so a path prefix won't work.
+Serve each at the root of a (sub)domain: the viewer and Moonshot's page call `/api/...` with absolute paths, so a path prefix won't work. Moonshot's MCP server checks `MOONSHOT_TOKEN` itself (set `MOONSHOT_URL` to its public address for download links); see [moonshot/README.md](moonshot/README.md#mcp-server).
 
 The viewer lists the bundled `examples/` plus anything in `/programs` inside the container; uncomment the volume in `docker-compose.yml` to mount your own folder (an `emucraft.toml` there is picked up as the default config).
 

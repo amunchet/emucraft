@@ -1,29 +1,57 @@
+# Three apps, each its own image, all on the shared Caddy network and none publishing ports:
+#   emucraft      G-code viewer             http://emucraft:8000
+#   moonshot      Moonshot's web page       http://moonshot:8000
+#   laser         laser engraving simulator http://laser:80
+#   moonshot-mcp  Moonshot's MCP server     http://moonshot-mcp:8000/mcp  (only with --profile moonshot-mcp)
 services:
   emucraft:
     build: .
     image: emucraft:latest
     container_name: emucraft
     restart: unless-stopped
-    # No published ports - Caddy reaches this at http://emucraft:8000 over the shared network
     expose:
       - "8000"
-    volumes:
-      - moonshot-web:/data   # the Moonshot page's models and runs
-      # Uncomment to list your own programs (and an emucraft.toml) in the viewer
-      # - ./programs:/programs:ro
+    # Uncomment to list your own programs (and an emucraft.toml) in the viewer
+    # volumes:
+    #   - ./programs:/programs:ro
     networks:
       - emucraft
 
-  # Moonshot's MCP server, separate from the web app (its own data). Start it with
-  #   docker compose --profile moonshot-mcp up -d --build
-  moonshot-mcp:
+  moonshot:
     build:
       context: .
-      target: moonshot-mcp
-    image: moonshot-mcp:latest
+      dockerfile: moonshot/Dockerfile
+    image: moonshot:latest
+    container_name: moonshot
+    restart: unless-stopped
+    expose:
+      - "8000"
+    volumes:
+      - moonshot-web:/data
+    networks:
+      - emucraft
+
+  laser:
+    build: laser
+    image: emucraft-laser:latest
+    container_name: laser
+    restart: unless-stopped
+    expose:
+      - "80"
+    networks:
+      - emucraft
+
+  # Moonshot's MCP server: the moonshot image, run as its own service with its own data.
+  moonshot-mcp:
+    image: moonshot:latest
     container_name: moonshot-mcp
     restart: unless-stopped
     profiles: ["moonshot-mcp"]
+    depends_on:
+      - moonshot   # builds the image
+    command: ["python", "-m", "moonshot.server", "--http", "--host", "0.0.0.0", "--port", "8000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
     expose:
       - "8000"
     environment:

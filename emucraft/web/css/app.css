@@ -248,16 +248,6 @@ body.dragging .drop { display: grid; }
 .opt-summary div { background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 8px; }
 .opt-summary b { display: block; font-size: 16px; font-family: var(--mono); }
 
-/* ---------------------------------------------------------------- moonshot page */
-.moonshot .panel.left .tab-body { flex: 1 1 50%; }
-.ms-item .msg { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ms-log { font: 11px/1.45 var(--mono); white-space: pre-wrap; margin: 6px 0 0; color: var(--muted); max-height: 220px; overflow: auto; }
-.ms-thumb { display: block; margin-bottom: 10px; color: var(--muted); font-size: 11px; text-decoration: none; }
-.ms-thumb img { display: block; width: 100%; border-radius: 6px; border: 1px solid var(--border); background: #fff; }
-.stats a { color: var(--accent); text-decoration: none; word-break: break-all; }
-a.btn { text-decoration: none; color: inherit; }
-.scrub { width: 100%; accent-color: var(--accent); }
-
 /* ---------------------------------------------------------------- transport */
 .transport {
   display: grid; grid-template-columns: auto minmax(120px, 1fr) auto; gap: 12px; align-items: center;

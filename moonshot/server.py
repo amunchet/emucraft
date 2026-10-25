@@ -5,7 +5,7 @@ and download any of it.
     python -m moonshot.server --http --port 8000           # streamable HTTP at /mcp, plus plain file routes
 
 Everything lives under the data directory (--data, or $MOONSHOT_DATA, default ./serve), kept by
-`moonshot.store`, which the web page in `emucraft serve` uses too: uploaded models in models/<id>/, and each
+`moonshot.store`, which the web page (`moonshot.web`) uses too: uploaded models in models/<id>/, and each
 planned run in runs/<id>/ with its results, assets/, fanuc/ and shots/. Planning, assets and robot programs
 are long, so their tools only queue the work and return; `status` follows it. One task runs at a time, since
 each already uses every CPU thread.

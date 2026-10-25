@@ -1,8 +1,8 @@
-// Moonshot page: models, runs and their queued tasks through /api/moonshot, and a planned part in 3D with
-// the drum at any point and the robot program played back.
+// Moonshot's page: models, runs and their queued tasks through /api, and a planned part in 3D with the drum at
+// any point and the robot program played back. The 3D viewer and helpers are the G-code viewer's (/js/).
 import * as THREE from 'three';
-import { el, fmtClock, hexToRgb, ramp, rampCss, toolColor, typed } from './util.js';
-import { Viewer } from './viewer.js';
+import { el, fmtClock, hexToRgb, ramp, rampCss, toolColor, typed } from '/js/util.js';
+import { Viewer } from '/js/viewer.js';
 
 const $ = id => document.getElementById(id);
 const PART = 0xb8b5ac, HOLDER = 0x77746d, DRUM = 0x2a78d6;
@@ -12,7 +12,7 @@ async function api(path, { method = 'GET', body, raw } = {}) {
   const init = { method };
   if (raw !== undefined) init.body = raw;
   else if (body !== undefined) Object.assign(init, { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-  const resp = await fetch(`/api/moonshot${path}`, init);
+  const resp = await fetch(`/api${path}`, init);
   const data = await resp.json().catch(() => ({ error: `HTTP ${resp.status}` }));
   if (!resp.ok || data.error) throw new Error(data.error || `HTTP ${resp.status}`);
   return data;

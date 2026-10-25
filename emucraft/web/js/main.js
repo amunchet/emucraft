@@ -50,7 +50,6 @@ class App {
       document.body.classList.add('embedded');
       $('open-btn').hidden = true;
       $('program-select').hidden = true;
-      $('moonshot-link').hidden = true;
       this.source = { name: EMBED.name, text: EMBED.text };
       const initial = EMBED.payload.initial_heights_gz ? await inflateTyped(EMBED.payload.initial_heights_gz, Float32Array) : null;
       this.onAnalysis(EMBED.payload, false, initial);

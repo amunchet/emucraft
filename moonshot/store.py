@@ -1,5 +1,5 @@
 """Moonshot's job store, shared by its two front ends: the MCP server (`moonshot.server`) and the web page
-(`emucraft serve`, at /moonshot/).
+(`moonshot.web`).
 
 Everything lives under the data directory: uploaded models in models/<id>/ (the file and model.json), and each
 planned run in runs/<id>/ with run.json (its tasks and their logs), the results, assets/, fanuc/ and shots/.
