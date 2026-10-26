@@ -150,4 +150,33 @@ describe('HTTP API', () => {
     }
     expect((await fetch(`${url}/render`)).status).toBe(405);
   }, 60000);
+
+  it('refuses huge images and too-small placements before doing the work', async () => {
+    const ihdr = png(new Uint8Array(4 * 4 * 4), 4, 4);
+    ihdr.writeUInt32BE(20000, 16); // the header claims 20000 x 20000
+    ihdr.writeUInt32BE(20000, 20);
+    let r = await post({ ...job(), image: { data: ihdr.toString('base64') } });
+    expect(r.status).toBe(400);
+    expect((await r.json()).error).toMatch(/megapixels/);
+    r = await post({ ...job(), placement: { width_mm: 0.002 } });
+    expect(r.status).toBe(400);
+    expect((await r.json()).error).toMatch(/too small/);
+  }, 60000);
+
+  it('holds the job slot while a body uploads, and keeps mm out of the summary', async () => {
+    const [a, b] = await Promise.all([post(job()), post(job())]);
+    expect([a.status, b.status].sort()).toEqual([200, 503]);
+    const summary = JSON.parse((a.status === 200 ? a : b).headers.get('x-laser-summary'));
+    expect(Object.keys(summary)).not.toContain('scale');
+    expect(Object.keys(summary)).not.toContain('texel_mm');
+  }, 60000);
+
+  it('checks the bearer token when one is set', async () => {
+    const locked = make_server({ token: 'sesame' });
+    await new Promise((r) => locked.listen(0, '127.0.0.1', r));
+    const at = `http://127.0.0.1:${locked.address().port}/api/laser/render`;
+    expect((await fetch(at, { method: 'POST', body: '{}' })).status).toBe(401);
+    expect((await fetch(at, { method: 'POST', body: '{}', headers: { Authorization: 'Bearer sesame' } })).status).toBe(400);
+    locked.close();
+  });
 });

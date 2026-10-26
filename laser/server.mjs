@@ -10,7 +10,11 @@
 //   output?: { mesh_mm, max_texture, true_scale } }
 // Placement is in the simulator frame (model centred in XY, lowest point at Z = 0), as the app shows it.
 //
-// Run: node server.mjs   (env: HOST=127.0.0.1, PORT=8001, LASER_JOBS=2 concurrent jobs, LASER_TIMEOUT_S=300)
+// Rendering is CPU- and memory-heavy: call it from the shop's backend, or set LASER_TOKEN and send
+// 'Authorization: Bearer <token>'. Do not expose it to the public unauthenticated.
+//
+// Run: node server.mjs   (env: HOST=127.0.0.1, PORT=8001, LASER_JOBS=2 concurrent jobs, LASER_TIMEOUT_S=300,
+//   LASER_MAX_MB=64 request body cap, LASER_TOKEN unset = no auth)
 import http from 'node:http';
 import { Worker, parentPort, workerData } from 'node:worker_threads';
 import { fileURLToPath } from 'node:url';
@@ -19,11 +23,11 @@ import jpeg from 'jpeg-js';
 import * as THREE from 'three';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
-import { DEFAULT_LASER, simulate } from './src/sim.js';
+import { DEFAULT_LASER, simulate, plan_grid, beam_diameter } from './src/sim.js';
 import { PRESETS, procedural_pixels, triangle_soup, centre_model } from './src/part.js';
 import { customer_glb } from './src/relief.js';
 
-const MAX_BODY = 256 * 1024 * 1024;
+const MAX_PIXELS = 25e6; // decoded image cap (the engraving grid is at most 4e6 cells anyway)
 const DEFAULTS = { supersample: 2, tex_scale_mm: 80, mesh_mm: 0.5, max_texture: 2048, true_scale: false };
 const LASER_RANGES = {
   spot_mm: [0.001, 10], focal_length_mm: [1, 10000], beam_diameter_mm: [0.01, 1000], focus_offset_mm: [-1000, 1000], power_w: [0, 1e6],
@@ -50,12 +54,17 @@ const linear = (hex, what) => {
   return new THREE.Color(hex).toArray(); // three's working space is linear sRGB
 };
 
-// PNG/JPEG bytes -> RGBA pixels.
+// PNG/JPEG bytes -> RGBA pixels; the size is checked (PNG header / jpeg-js limit) before decoding.
 function decode_image(buf, what) {
   try {
-    if (buf.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) { const p = PNG.sync.read(buf); return { px: p.data, w: p.width, h: p.height }; }
-    if (buf[0] === 0xff && buf[1] === 0xd8) { const j = jpeg.decode(buf, { useTArray: true, maxResolutionInMP: 100, maxMemoryUsageInMB: 1024 }); return { px: j.data, w: j.width, h: j.height }; }
+    if (buf.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) {
+      if (buf.length < 24 || buf.readUInt32BE(16) * buf.readUInt32BE(20) > MAX_PIXELS) throw bad(`${what} is over ${MAX_PIXELS / 1e6} megapixels`);
+      const p = PNG.sync.read(buf);
+      return { px: p.data, w: p.width, h: p.height };
+    }
+    if (buf[0] === 0xff && buf[1] === 0xd8) { const j = jpeg.decode(buf, { useTArray: true, maxResolutionInMP: MAX_PIXELS / 1e6, maxMemoryUsageInMB: 512 }); return { px: j.data, w: j.width, h: j.height }; }
   } catch (err) {
+    if (err.status) throw err;
     throw bad(`${what} could not be decoded: ${err.message}`);
   }
   throw bad(`${what} must be a PNG or JPEG`);
@@ -78,6 +87,7 @@ async function render(body) {
   if (!root) throw bad("model.format must be 'stl' or 'obj'");
   const positions = triangle_soup(root);
   if (!positions.length) throw bad('model has no triangles');
+  if (!positions.every(Number.isFinite)) throw bad('model has non-finite vertices');
   centre_model(positions, 'model');
 
   const img = decode_image(b64(only(job.image, ['data'], 'image').data, 'image.data'), 'image');
@@ -96,6 +106,11 @@ async function render(body) {
     width_mm, height_mm: pl.height_mm === undefined ? (width_mm * img.h) / img.w : num(pl.height_mm, 'placement.height_mm', [1e-3, 1e5]),
   };
   const supersample = num(job.supersample ?? DEFAULTS.supersample, 'supersample', [1, 4]);
+  // the defocused spot, in grid cells, sets the blur kernel: refuse placements so small that it would run for ages
+  const { grid_w } = plan_grid(img.w, img.h, supersample);
+  let zmax = 0;
+  for (let k = 2; k < positions.length; k += 3) zmax = Math.max(zmax, positions[k]);
+  if (beam_diameter(laser, Math.abs(laser.focus_offset_mm) + zmax) / (placement.width_mm / grid_w) > 400) throw bad('placement is too small for the laser spot (the spot would cover hundreds of image pixels)');
 
   const mat = only(job.material, ['preset', 'color', 'mark', 'rough', 'metal', 'mark_rough', 'mark_metal', 'tex_scale_mm', 'texture'], 'material');
   const p = PRESETS[mat.preset ?? 'anodized_black'];
@@ -107,7 +122,9 @@ async function render(body) {
     mark_rough: num(mat.mark_rough ?? p.mark_rough, 'material.mark_rough', [0, 1]), mark_metal: num(mat.mark_metal ?? p.mark_metal, 'material.mark_metal', [0, 1]),
     mark_full: p.mark_full, clearcoat: p.clearcoat || 0, clearcoat_rough: p.clearcoat_rough ?? 0.03,
     tile: custom || (p.tex ? { px: procedural_pixels(p.tex, 1024), w: 1024, h: 1024 } : null),
-    tile_mm: num(mat.tex_scale_mm ?? DEFAULTS.tex_scale_mm, 'material.tex_scale_mm', [1, 1000]),
+    // a texture's period is a ruler: unless true_scale was asked for, vary it a little per render so the unit-less
+    // file does not give the real size away
+    tile_mm: num(mat.tex_scale_mm ?? DEFAULTS.tex_scale_mm, 'material.tex_scale_mm', [1, 1000]) * (job.output?.true_scale ? 1 : 0.9 + 0.2 * Math.random()),
     laminate: !custom && p.tex?.startsWith('super_'), rough_tile: !custom && p.tex === 'brushed',
   };
   const out = only(job.output, ['mesh_mm', 'max_texture', 'true_scale'], 'output');
@@ -121,11 +138,12 @@ async function render(body) {
   }
   const { glb, summary } = await customer_glb({
     positions, res, placement, look,
-    mesh_mm: num(out.mesh_mm ?? DEFAULTS.mesh_mm, 'output.mesh_mm', [0.05, 50]),
+    mesh_mm: num(out.mesh_mm ?? DEFAULTS.mesh_mm, 'output.mesh_mm', [0.1, 2]),
     max_texture: Math.round(num(out.max_texture ?? DEFAULTS.max_texture, 'output.max_texture', [256, 8192])),
     true_scale: out.true_scale ?? DEFAULTS.true_scale,
   }, (px, w, h) => PNG.sync.write({ width: w, height: h, data: Buffer.from(px.buffer, px.byteOffset, px.byteLength) }, { colorType: 6 }));
-  return { glb, summary: { ...summary, grid: [res.grid_w, res.grid_h], max_depth_mm: res.max_depth, ...res.stats, bytes: glb.byteLength } };
+  // nothing in mm that would give the part's size away if the summary reaches a browser
+  return { glb, summary: { texture: summary.texture, relief_triangles: summary.relief_triangles, wall_triangles: summary.wall_triangles, max_depth_mm: res.max_depth, bytes: glb.byteLength } };
 }
 
 // Inside a job thread: run the job and post the result back.
@@ -138,15 +156,20 @@ if (workerData?.laser_job) {
   }
 }
 
-// HTTP server; jobs beyond `jobs` concurrent ones get 503.
-export function make_server({ jobs = 2, timeout_s = 300 } = {}) {
+// HTTP server; jobs beyond `jobs` concurrent ones get 503. A job's slot is held from before its body is read until
+// it ends, and a job whose client has gone away is stopped.
+export function make_server({ jobs = 2, timeout_s = 300, max_mb = 64, token = '' } = {}) {
+  const max_body = max_mb * 1024 * 1024;
   let running = 0;
-  const run = (body) => new Promise((resolve, reject) => {
-    const w = new Worker(fileURLToPath(import.meta.url), { workerData: { laser_job: true, body } });
-    const timer = setTimeout(() => { w.terminate(); reject(Object.assign(new Error(`job took longer than ${timeout_s} s`), { status: 504 })); }, timeout_s * 1000);
-    w.once('message', (m) => { clearTimeout(timer); w.terminate(); m.ok ? resolve(m) : reject(Object.assign(new Error(m.message), { status: m.status })); });
-    w.once('error', (err) => { clearTimeout(timer); reject(err); });
-    w.once('exit', (code) => { clearTimeout(timer); reject(new Error(`job thread exited (${code})`)); }); // no-op once settled
+  const run = (body, out) => new Promise((resolve, reject) => {
+    const w = new Worker(fileURLToPath(import.meta.url), { workerData: { laser_job: true, body }, transferList: [body.buffer] });
+    const stop = (err) => { clearTimeout(timer); out.off('close', gone); w.terminate(); reject(err); };
+    const gone = () => stop(Object.assign(new Error('client went away'), { status: 499 }));
+    const timer = setTimeout(() => stop(Object.assign(new Error(`job took longer than ${timeout_s} s`), { status: 504 })), timeout_s * 1000);
+    out.on('close', gone);
+    w.once('message', (m) => { clearTimeout(timer); out.off('close', gone); w.terminate(); m.ok ? resolve(m) : reject(Object.assign(new Error(m.message), { status: m.status })); });
+    w.once('error', stop);
+    w.once('exit', (code) => stop(new Error(`job thread exited (${code})`))); // no-op once settled
   });
   const send = (out, status, body, type, extra = {}) => {
     out.writeHead(status, { 'Content-Type': type, 'Content-Length': Buffer.byteLength(body), 'Cache-Control': 'no-store', ...extra });
@@ -155,6 +178,7 @@ export function make_server({ jobs = 2, timeout_s = 300 } = {}) {
   const fail = (out, status, message) => send(out, status, JSON.stringify({ error: message }), 'application/json');
   return http.createServer(async (req, out) => {
     const path = new URL(req.url, 'http://x').pathname;
+    let slot = false;
     try {
       if (req.method === 'GET' && path === '/api/laser/info') {
         const presets = Object.fromEntries(Object.entries(PRESETS).map(([k, p]) => [k, p.label]));
@@ -162,29 +186,31 @@ export function make_server({ jobs = 2, timeout_s = 300 } = {}) {
       }
       if (path !== '/api/laser/render') return fail(out, 404, 'not found');
       if (req.method !== 'POST') return fail(out, 405, 'use POST');
+      if (token && req.headers.authorization !== `Bearer ${token}`) return fail(out, 401, 'missing or wrong bearer token');
+      if (Number(req.headers['content-length']) > max_body) return fail(out, 413, `body over ${max_mb} MB`);
       if (running >= jobs) return fail(out, 503, 'busy: too many jobs running, retry shortly');
+      running++;
+      slot = true;
       const parts = [];
       let size = 0;
       for await (const chunk of req) {
         size += chunk.length;
-        if (size > MAX_BODY) { fail(out, 413, `body over ${MAX_BODY} bytes`); req.destroy(); return; }
+        if (size > max_body) { out.setHeader('Connection', 'close'); return fail(out, 413, `body over ${max_mb} MB`); }
         parts.push(chunk);
       }
-      running++;
-      try {
-        const { glb, summary } = await run(Buffer.concat(parts));
-        send(out, 200, Buffer.from(glb.buffer, glb.byteOffset, glb.byteLength), 'model/gltf-binary', { 'Content-Disposition': 'attachment; filename="part.glb"', 'X-Laser-Summary': JSON.stringify(summary) });
-      } finally {
-        running--;
-      }
+      const { glb, summary } = await run(new Uint8Array(Buffer.concat(parts)), out); // a copy owns its ArrayBuffer: transferable
+      send(out, 200, Buffer.from(glb.buffer, glb.byteOffset, glb.byteLength), 'model/gltf-binary', { 'Content-Disposition': 'attachment; filename="part.glb"', 'X-Laser-Summary': JSON.stringify(summary) });
     } catch (err) {
-      if (!err.status || err.status >= 500) console.error(err);
-      if (!out.headersSent) fail(out, err.status || 500, err.message || String(err));
+      const internal = !err.status || err.status >= 500;
+      if (internal && err.status !== 504) console.error(err);
+      if (!out.headersSent && !out.destroyed) fail(out, err.status || 500, internal && err.status !== 504 ? 'internal error (see the server log)' : err.message);
+    } finally {
+      if (slot) running--;
     }
   });
 }
 
 if (!workerData?.laser_job && process.argv[1] === fileURLToPath(import.meta.url)) {
   const env = process.env, host = env.HOST || '127.0.0.1', port = Number(env.PORT || 8001);
-  make_server({ jobs: Number(env.LASER_JOBS || 2), timeout_s: Number(env.LASER_TIMEOUT_S || 300) }).listen(port, host, () => console.log(`laser API on http://${host}:${port}/api/laser/info`));
+  make_server({ jobs: Number(env.LASER_JOBS || 2), timeout_s: Number(env.LASER_TIMEOUT_S || 300), max_mb: Number(env.LASER_MAX_MB || 64), token: env.LASER_TOKEN || '' }).listen(port, host, () => console.log(`laser API on http://${host}:${port}/api/laser/info`));
 }

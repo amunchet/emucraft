@@ -27,3 +27,26 @@ Fixed the Dymondwood presets: the veneers are now stacked in Z, as the real lami
 
 ## 2026-10-26 13:50 CDT
 Customer GLB API for the laser simulator: `laser/server.mjs` (plain node:http, one worker thread per job) takes a model (STL/OBJ), a bitmap (PNG/JPEG), placement, laser and material settings as JSON and returns one `.glb` for a three.js frontend that does not carry the solid: an open, unit-less front shell (top relief on a coarse 0.5 mm grid from the unengraved surface plus outline walls, no back), with the engraving and fine detail baked into colour, normal, roughness/metal/clearcoat and alpha-mask textures (`laser/src/relief.js`). About 5–7 MB for the sample grip instead of ~78 MB, and it passes the Khronos glTF validator. Strict input validation (unknown fields are 400s). Added a reference customer viewer (`laser/viewer.html`), a Docker image and compose service, API tests, and moved presets/procedural textures/model loading into `laser/src/part.js` so the app and the API render materials identically.
+
+## 2026-10-26 14:14 CDT
+Fixes from a multi-agent review of the laser API.
+- **Service hardening:**
+  - The job slot is now held from before the body is read; previously the `LASER_JOBS` cap could be bypassed.
+  - The body size is checked against Content-Length, with a configurable `LASER_MAX_MB` cap.
+  - PNG/JPEG dimensions are capped at 25 MP before decoding.
+  - The mesh grid is bounded: `mesh_mm` is 0.1–2 mm and never finer than 2 texels or 1/1024 of the part.
+  - Placements so small that the spot covers hundreds of pixels are rejected.
+  - Jobs are stopped when the client disconnects.
+  - An optional `LASER_TOKEN` bearer auth was added.
+  - Internal errors are no longer echoed to the client.
+  - The compose service has memory and CPU limits.
+- **Protection:**
+  - `X-Laser-Summary` no longer carries scale or texel size.
+  - The material tile size is varied ±10 % per render, so wall texture coordinates can't be used as a ruler for the real size.
+- **Quality:**
+  - Texel pitch now follows the part and `max_texture`, not the engraving grid.
+  - Depth is box-filtered when texels are coarser than the engraving (no moiré on hatching or dither).
+  - Outline simplification respects the wall-top height.
+  - Folded triangles from boundary snapping are dropped.
+  - The normal-map frame uses the snapped triangle.
+- **Viewer:** fixed the orbit limit and height-only resizes.

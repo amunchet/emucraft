@@ -27,7 +27,8 @@ ground.receiveShadow = true;
 scene.add(ground);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
-controls.maxPolarAngle = Math.PI * 0.55; // the file has no back: keep the camera above the part
+controls.maxPolarAngle = Math.PI * 0.47; // the file has no back: keep the camera above the part
+controls.maxDistance = 6;
 let part = null;
 
 // Show a GLB (URL or File), scaled so its largest side is 1 and resting on the ground.
@@ -54,7 +55,8 @@ function view_from(dir) {
 
 function frame() {
   const w = renderer.domElement.clientWidth, h = renderer.domElement.clientHeight;
-  if (renderer.domElement.width !== Math.floor(w * renderer.getPixelRatio())) { renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
+  const cv = renderer.domElement, pr = renderer.getPixelRatio();
+  if (cv.width !== Math.floor(w * pr) || cv.height !== Math.floor(h * pr)) { renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
   controls.update();
   renderer.render(scene, camera);
   requestAnimationFrame(frame);

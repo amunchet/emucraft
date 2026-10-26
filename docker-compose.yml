@@ -19,6 +19,8 @@ services:
     image: emucraft-laser:latest
     container_name: emucraft-laser
     restart: unless-stopped
+    mem_limit: 4g
+    cpus: 4
     expose:
       - "8001"
     networks:

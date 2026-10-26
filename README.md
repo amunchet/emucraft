@@ -274,7 +274,16 @@ Sample: `laser/samples/` has a parametric full-size 1911 grip panel with a stron
 ### Customer GLB API (`laser/server.mjs`)
 A small Node service runs the same simulation and returns **one `.glb` file** to hand to a three.js frontend. The file shows the engraved part faithfully but does not carry the solid itself.
 
-Run it with `cd laser && npm install && node server.mjs`. It listens on `127.0.0.1:8001`; set `HOST`, `PORT`, `LASER_JOBS` (concurrent jobs, default 2) and `LASER_TIMEOUT_S` (default 300) to change that. With Docker, `docker compose up -d --build` also starts the `emucraft-laser` container. Route it in Caddy ahead of the main viewer:
+Run it with `cd laser && npm install && node server.mjs`. It listens on `127.0.0.1:8001`. Environment variables:
+- `HOST`, `PORT`
+- `LASER_JOBS`: concurrent jobs (default 2)
+- `LASER_TIMEOUT_S`: per-job time limit (default 300)
+- `LASER_MAX_MB`: request body cap (default 64)
+- `LASER_TOKEN`: if set, requests must send `Authorization: Bearer <token>`
+
+With Docker, `docker compose up -d --build` also starts the `emucraft-laser` container, capped at 4 GB of memory and 4 CPUs.
+
+A render of the sample grip takes about 30 s of CPU and peaks at about 0.5 GB of memory. Call it from the shop's backend and pass the GLB on to the browser, or set `LASER_TOKEN`. Don't route it publicly without authentication. If the backend reaches it through Caddy:
 
 ```
 handle /api/laser/* {
@@ -282,8 +291,12 @@ handle /api/laser/* {
 }
 ```
 
+Guard rails:
+- Images over 25 MP and placements so small that the spot would cover hundreds of pixels are rejected before any work starts.
+- A job whose client disconnects is stopped.
+
 - `GET /api/laser/info` returns the material presets, the laser defaults and the output defaults.
-- `POST /api/laser/render` takes a JSON job and returns `model/gltf-binary`. A summary goes in the `X-Laser-Summary` header (texture size, triangle counts, max depth, spot sizes). A bad job gets `400 {"error": "..."}`; unknown fields are rejected, not ignored. When `LASER_JOBS` jobs are already running, it returns `503`.
+- `POST /api/laser/render` takes a JSON job and returns `model/gltf-binary`. A summary goes in the `X-Laser-Summary` header: texture size, triangle counts, max engraved depth and bytes. It deliberately contains nothing that gives away the part's size. A bad job gets `400 {"error": "..."}`; unknown fields are rejected, not ignored. When `LASER_JOBS` jobs are already running, it returns `503`.
 
 ```json
 {
@@ -301,12 +314,12 @@ Field defaults:
 - **Placement:** the same frame and numbers the app's Alignment panel shows (model centred in XY, lowest point at Z = 0). If width and height are both left out, one pixel equals one spot. If only one is given, the other keeps the image's aspect ratio.
 - **`laser`:** any subset of the simulator's laser parameters.
 - **`material`:** a preset, optionally overriding `color`, `mark`, `rough`, `metal`, `mark_rough` and `mark_metal`, or supplying a custom base `texture` (base64 image).
-- **`output.mesh_mm`:** the geometry resolution.
+- **`output.mesh_mm`:** the geometry resolution, 0.1–2 mm. It is never finer than 2 texels or 1/1024 of the part.
 - **`output.max_texture`:** caps the texture size.
 - **`output.true_scale`:** keeps real size in metres. By default the part is scaled so its longest side is 1.
 
 What the file contains:
-- **Shape:** only the side the laser sees, as an open shell. The front relief is sampled every `mesh_mm` (0.5 mm by default) from the *unengraved* surface, and the outline walls drop to the base. There is no back, no closed volume, and no real-world scale unless asked for. Names and metadata are stripped.
+- **Shape:** only the side the laser sees, as an open shell. The front relief is sampled every `mesh_mm` (0.5 mm by default) from the *unengraved* surface, and the outline walls drop to the base. There is no back, no closed volume, and no real-world scale unless asked for. Names and metadata are stripped. The material texture's tile size is varied by ±10 % per render, so the texture period can't be used as a ruler.
 - **Detail:** fine detail is in the textures. Colour holds the material and the burn marks, a tangent-space normal map holds the engraving and the fine surface shape, a packed texture holds roughness, metalness and clearcoat, and an alpha mask cuts the exact outline and holes.
 - **Size:** about 5–7 MB for the sample grip (the full-detail app export is about 78 MB). It passes the Khronos glTF validator with no errors or warnings.
 
@@ -323,7 +336,7 @@ Viewing: `laser/viewer.html` is a reference customer viewer. It is plain three.j
 ```js
 const gltf = await new GLTFLoader().loadAsync('/part.glb'); // from POST /api/laser/render
 scene.add(gltf.scene);              // Y up, longest side 1 (unless true_scale)
-controls.maxPolarAngle = Math.PI * 0.55; // there is no back: keep the camera above the part
+controls.maxPolarAngle = Math.PI * 0.47; // there is no back: keep the camera above the part
 ```
 
 Limitations and next steps: STEP/IGES import (would need occt-import-js), lasers that don't fire straight down or rotary axes, heightmap export, and splitting the 720 kB bundle into smaller chunks.

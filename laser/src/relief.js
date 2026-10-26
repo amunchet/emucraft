@@ -18,16 +18,17 @@ export async function customer_glb({ positions, res, placement: P, look, mesh_mm
     y0 = Math.min(y0, positions[k + 1]); y1 = Math.max(y1, positions[k + 1]);
     top = Math.max(top, positions[k + 2]);
   }
-  // texel pitch: the engraving grid's, unless that needs more than max_texture texels (+ a 1-texel empty margin)
+  // texel pitch: the whole part in max_texture texels (+ a 1-texel empty margin), whatever the engraving grid's pitch
   const { grid_w: gw, grid_h: gh, depth } = res, pw = P.width_mm / gw, ph = P.height_mm / gh;
-  const t = Math.max(Math.min(pw, ph), (x1 - x0) / (max_texture - 2), (y1 - y0) / (max_texture - 2));
+  const t = Math.max(0.005, (x1 - x0) / (max_texture - 2), (y1 - y0) / (max_texture - 2));
   const tw = Math.ceil((x1 - x0) / t) + 2, th = Math.ceil((y1 - y0) / t) + 2;
   const left = (x0 + x1) / 2 - (tw * t) / 2, upper = (y0 + y1) / 2 + (th * t) / 2; // texel (i, j) centre: left + (i + .5) t, upper - (j + .5) t
   const base = rasterize_surface(positions, { cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, angle: 0, width_mm: tw * t, height_mm: th * t }, tw, th);
   const n = tw * th, ok = (k) => !Number.isNaN(base[k]);
 
-  // removed depth per texel: box filter of the bilinear depth grid when texels are coarser than the engraving
-  const c = Math.cos(P.angle), s = Math.sin(P.angle), ss = Math.min(4, Math.ceil(t / Math.min(pw, ph) - 1e-6));
+  // removed depth per texel: the mean of the engraving cells inside it when texels are coarser than the engraving
+  // (fine hatching and dither would alias otherwise), else bilinear from the engraving grid
+  const c = Math.cos(P.angle), s = Math.sin(P.angle);
   const depth_at = (x, y) => {
     const dx = x - P.cx, dy = y - P.cy, gi = (c * dx + s * dy) / pw + gw / 2 - 0.5, gj = gh / 2 - 0.5 - (-s * dx + c * dy) / ph;
     if (gi < -0.5 || gj < -0.5 || gi > gw - 0.5 || gj > gh - 0.5) return 0;
@@ -36,21 +37,30 @@ export async function customer_glb({ positions, res, placement: P, look, mesh_mm
     const fi = Math.min(1, Math.max(0, gi - i)), fj = Math.min(1, Math.max(0, gj - j)), k = j * gw + i;
     return (depth[k] * (1 - fi) + depth[k + 1] * fi) * (1 - fj) + (depth[k + gw] * (1 - fi) + depth[k + gw + 1] * fi) * fj;
   };
+  const scatter = t > 1.5 * Math.min(pw, ph), acc = new Float64Array(scatter ? n : 0), cnt = new Uint32Array(scatter ? n : 0);
+  for (let gj = 0; scatter && gj < gh; gj++) {
+    for (let gi = 0; gi < gw; gi++) {
+      const lx = (gi + 0.5) * pw - P.width_mm / 2, ly = P.height_mm / 2 - (gj + 0.5) * ph;
+      const i = Math.floor((P.cx + c * lx - s * ly - left) / t), j = Math.floor((upper - P.cy - s * lx - c * ly) / t);
+      if (i < 0 || j < 0 || i >= tw || j >= th) continue;
+      acc[j * tw + i] += depth[gj * gw + gi];
+      cnt[j * tw + i]++;
+    }
+  }
   const dep = new Float32Array(n), z = new Float32Array(n).fill(NaN);
   for (let j = 0; j < th; j++) {
     for (let i = 0; i < tw; i++) {
       const k = j * tw + i;
       if (!ok(k)) continue;
-      let acc = 0;
-      for (let b = 0; b < ss; b++) for (let a = 0; a < ss; a++) acc += depth_at(left + (i + (a + 0.5) / ss) * t, upper - (j + (b + 0.5) / ss) * t);
-      dep[k] = acc / (ss * ss);
+      dep[k] = scatter && cnt[k] ? acc[k] / cnt[k] : depth_at(left + (i + 0.5) * t, upper - (j + 0.5) * t);
       z[k] = base[k] - dep[k];
     }
   }
 
   // coarse vertex grid over the texture area; a cell is kept if a surface texel lies within one texel of it, so the
   // alpha edge (half a texel outside the last surface texel) always falls on kept cells
-  const m = mesh_mm, mw = Math.ceil((tw * t) / m) + 1, mh = Math.ceil((th * t) / m) + 1;
+  // (never finer than 2 texels, nor than 1024 cells across: the shell must stay coarse and bounded)
+  const m = Math.max(mesh_mm, 2 * t, (tw * t) / 1024, (th * t) / 1024), mw = Math.ceil((tw * t) / m) + 1, mh = Math.ceil((th * t) / m) + 1;
   const kept = new Uint8Array((mw - 1) * (mh - 1));
   for (let j = 0; j < th; j++) {
     for (let i = 0; i < tw; i++) {
@@ -90,13 +100,15 @@ export async function customer_glb({ positions, res, placement: P, look, mesh_mm
       vx[k] = left + (ba + 0.5 + (fi - ba) * f) * t; vy[k] = upper - (bb + 0.5 + (fj - bb) * f) * t; vz[k] = base[bb * tw + ba];
     }
   }
-  // triangles on grid vertex ids: cell (I, J) holds (a, c, b) and (b, c, d), a = top-left, c = below a
-  const tri = [];
+  // triangles on grid vertex ids: cell (I, J) holds (a, c, b) and (b, c, d), a = top-left, c = below a; snapping
+  // can fold one over (plan-view area <= 0), which would show its back, so those are dropped
+  const tri = [], plan_area = (a, b, d) => (vx[b] - vx[a]) * (vy[d] - vy[a]) - (vy[b] - vy[a]) * (vx[d] - vx[a]);
   for (let J = 0; J < mh - 1; J++) {
     for (let I = 0; I < mw - 1; I++) {
       if (!kept[J * (mw - 1) + I]) continue;
       const a = J * mw + I, b = a + 1, cc = a + mw, d = cc + 1;
-      tri.push(a, cc, b, b, cc, d);
+      if (plan_area(a, cc, b) > 0) tri.push(a, cc, b);
+      if (plan_area(b, cc, d) > 0) tri.push(b, cc, d);
     }
   }
   // area-weighted vertex normals, and tangents along +x (the texture's +u) made orthogonal to them
@@ -153,11 +165,14 @@ export async function customer_glb({ positions, res, placement: P, look, mesh_mm
       const l = i > 0 && ok(k - 1) ? k - 1 : k, r = i < tw - 1 && ok(k + 1) ? k + 1 : k, up = j > 0 && ok(k - tw) ? k - tw : k, dn = j < th - 1 && ok(k + tw) ? k + tw : k;
       const gx = r === l ? 0 : (z[r] - z[l]) / ((r - l) * t), gy = up === dn ? 0 : (z[up] - z[dn]) / (((dn - up) / tw) * t);
       const fn = [-gx, -gy, 1].map((q) => q / Math.hypot(gx, gy, 1));
-      // (barycentric in the triangle of the cell holding the texel, as the GPU interpolates)
-      const fx = (x - left) / m, fy = (upper - y) / m, I = Math.min(mw - 2, Math.floor(fx)), J = Math.min(mh - 2, Math.floor(fy)), u = fx - I, v = fy - J, q0 = J * mw + I;
-      const corners = u + v <= 1 ? [[q0, 1 - u - v], [q0 + 1, u], [q0 + mw, v]] : [[q0 + mw + 1, u + v - 1], [q0 + mw, 1 - u], [q0 + 1, 1 - v]];
+      // (barycentric, from the snapped vertex positions, in the triangle of the cell holding the texel, as the GPU
+      // interpolates; clamped where snapping left the texel outside it)
+      const fx = (x - left) / m, fy = (upper - y) / m, I = Math.min(mw - 2, Math.floor(fx)), J = Math.min(mh - 2, Math.floor(fy)), q0 = J * mw + I;
+      const [qa, qb, qc] = fx - I + fy - J <= 1 ? [q0, q0 + 1, q0 + mw] : [q0 + mw + 1, q0 + mw, q0 + 1], area = plan_area(qa, qb, qc);
+      const wb = Math.max(0, ((x - vx[qa]) * (vy[qc] - vy[qa]) - (y - vy[qa]) * (vx[qc] - vx[qa])) / area || 0);
+      const wc = Math.max(0, ((vx[qb] - vx[qa]) * (y - vy[qa]) - (vy[qb] - vy[qa]) * (x - vx[qa])) / area || 0), wa = Math.max(0, 1 - wb - wc);
       const N = [0, 0, 0];
-      for (const [q, w] of corners) for (let a = 0; a < 3; a++) N[a] += w * vn[q * 3 + a];
+      for (const [q, w] of [[qa, wa], [qb, wb], [qc, wc]]) for (let a = 0; a < 3; a++) N[a] += w * vn[q * 3 + a];
       const nl = Math.hypot(...N);
       N.forEach((q, a) => (N[a] = q / nl));
       const T = [1 - N[0] * N[0], -N[0] * N[1], -N[0] * N[2]], tl = Math.hypot(...T);
@@ -267,17 +282,19 @@ export async function customer_glb({ positions, res, placement: P, look, mesh_mm
   return { glb, summary: { texture: [tw, th], texel_mm: t, mesh_mm: m, relief_triangles: ridx.length / 3, wall_triangles: widx.length / 3, scale: k_s } };
 }
 
-// Douglas-Peucker on a closed loop of [x, y], split at the point farthest from its first point.
+// Douglas-Peucker on a closed loop of [x, y, z] (z deviation counts too: it is the wall top), split at the point
+// farthest from its first point.
 function simplify_loop(loop, tol) {
   const far = loop.reduce((b, p, a) => ((p[0] - loop[0][0]) ** 2 + (p[1] - loop[0][1]) ** 2 > (loop[b][0] - loop[0][0]) ** 2 + (loop[b][1] - loop[0][1]) ** 2 ? a : b), 0);
   const keep = new Uint8Array(loop.length);
   keep[0] = keep[far] = 1;
   const stack = [[0, far], [far, loop.length]];
   while (stack.length) {
-    const [a, b] = stack.pop(), p = loop[a], q = loop[b % loop.length], dx = q[0] - p[0], dy = q[1] - p[1], len = Math.hypot(dx, dy) || 1;
+    const [a, b] = stack.pop(), p = loop[a], q = loop[b % loop.length], dx = q[0] - p[0], dy = q[1] - p[1], len2 = dx * dx + dy * dy || 1;
     let best = -1, dmax = tol;
     for (let k = a + 1; k < b; k++) {
-      const d = Math.abs((loop[k][0] - p[0]) * dy - (loop[k][1] - p[1]) * dx) / len;
+      const r = loop[k], f = Math.min(1, Math.max(0, ((r[0] - p[0]) * dx + (r[1] - p[1]) * dy) / len2));
+      const d = Math.max(Math.abs((r[0] - p[0]) * dy - (r[1] - p[1]) * dx) / Math.sqrt(len2), Math.abs(r[2] - p[2] - f * (q[2] - p[2])));
       if (d > dmax) { dmax = d; best = k; }
     }
     if (best >= 0) { keep[best] = 1; stack.push([a, best], [best, b]); }
