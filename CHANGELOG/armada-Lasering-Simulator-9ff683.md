@@ -57,3 +57,9 @@ Customer GLB no longer gives away the part's real size.
 - **The fix:** `customer_glb` takes a `jitter` factor and applies it to every length it builds from in mm: the mesh pitch, the material tile and the 0.005 mm texel floor. Using one factor for all three means they can't be cross-checked against each other. The API picks the factor in [0.9, 1.1] from an HMAC of the part's geometry, so a re-render of the same part can't be used to average it out. It replaces the per-render `Math.random()` tile jitter. The new `LASER_SECRET` variable keeps the factor stable across restarts.
 - **Also:** the bearer token is now compared in constant time.
 - **Tests:** a unit test for the jitter (mesh pitch and wall UVs), and an API test that the factor is stable per part, stays within ±10 % and depends on the secret.
+
+## 2026-10-26 18:58 CDT
+Closed three more size leaks in the customer GLB that an adversarial hunt found after the jitter fix. Each one recovered the size to within 0.05–3 %. Each is now in jittered units, so every route gives the same real size ÷ jitter, and no two routes can be cross-checked against each other.
+- **Wall cut-off:** walls were dropped below a fixed 1e-4 mm height, which on feather-edged parts bounds the size. The cut-off is now relative to the texel.
+- **Engraving depth:** the normal map and the Dymondwood bands now use depth × jitter. Before, the real depth readable from the marks (`mark_full`) divided by the depth integrated from the normal map gave the size.
+- **Default placement:** the default placement (1 image px = 1 spot) is now jittered too. Before, the bitmap's pixel grid in the textures was a 0.05 mm ruler.

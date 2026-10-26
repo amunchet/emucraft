@@ -97,6 +97,7 @@ async function render(body, secret) {
   if (!positions.length) throw bad('model has no triangles');
   if (!positions.every(Number.isFinite)) throw bad('model has non-finite vertices');
   centre_model(positions, 'model');
+  const jitter = job.output?.true_scale === true ? 1 : size_jitter(secret, positions);
 
   const img = decode_image(b64(only(job.image, ['data'], 'image').data, 'image.data'), 'image');
   const grey = new Float32Array(img.w * img.h);
@@ -106,9 +107,10 @@ async function render(body, secret) {
   for (const [k, v] of Object.entries(only(job.laser, Object.keys(DEFAULT_LASER), 'laser'))) {
     if (k === 'invert') { if (typeof v !== 'boolean') throw bad('laser.invert must be true or false'); laser.invert = v; } else laser[k] = num(v, `laser.${k}`, LASER_RANGES[k]);
   }
-  // placement defaults as in the app: centred, 1 px = 1 spot, the other side keeping the image aspect
+  // placement defaults as in the app: centred, 1 px = 1 spot, the other side keeping the image aspect; the default
+  // pixel pitch is jittered too, or the bitmap's pixel grid in the textures would be a 0.05 mm ruler
   const pl = only(job.placement, ['cx', 'cy', 'angle_deg', 'width_mm', 'height_mm'], 'placement'), R = [-1e5, 1e5];
-  const width_mm = pl.width_mm === undefined ? (pl.height_mm === undefined ? img.w * laser.spot_mm : (pl.height_mm * img.w) / img.h) : num(pl.width_mm, 'placement.width_mm', [1e-3, 1e5]);
+  const width_mm = pl.width_mm === undefined ? (pl.height_mm === undefined ? img.w * laser.spot_mm * jitter : (pl.height_mm * img.w) / img.h) : num(pl.width_mm, 'placement.width_mm', [1e-3, 1e5]);
   const placement = {
     cx: num(pl.cx ?? 0, 'placement.cx', R), cy: num(pl.cy ?? 0, 'placement.cy', R), angle: (num(pl.angle_deg ?? 0, 'placement.angle_deg', [-3600, 3600]) * Math.PI) / 180,
     width_mm, height_mm: pl.height_mm === undefined ? (width_mm * img.h) / img.w : num(pl.height_mm, 'placement.height_mm', [1e-3, 1e5]),
@@ -147,7 +149,7 @@ async function render(body, secret) {
     mesh_mm: num(out.mesh_mm ?? DEFAULTS.mesh_mm, 'output.mesh_mm', [0.1, 2]),
     max_texture: Math.round(num(out.max_texture ?? DEFAULTS.max_texture, 'output.max_texture', [256, 8192])),
     true_scale: out.true_scale ?? DEFAULTS.true_scale,
-    jitter: out.true_scale ? 1 : size_jitter(secret, positions),
+    jitter,
   }, (px, w, h) => PNG.sync.write({ width: w, height: h, data: Buffer.from(px.buffer, px.byteOffset, px.byteLength) }, { colorType: 6 }));
   // nothing in mm that would give the part's size away if the summary reaches a browser
   return { glb, summary: { texture: summary.texture, relief_triangles: summary.relief_triangles, wall_triangles: summary.wall_triangles, max_depth_mm: res.max_depth, bytes: glb.byteLength } };

@@ -52,13 +52,15 @@ export async function customer_glb({ positions, res, placement: P, look, mesh_mm
       cnt[j * tw + i]++;
     }
   }
+  // z is the engraved surface as the file shows it (normal map, laminate bands): its depth is scaled by the jitter
+  // like every other length, else depth from the marks (real mm via mark_full) over depth from the normals is a ruler
   const dep = new Float32Array(n), z = new Float32Array(n).fill(NaN);
   for (let j = 0; j < th; j++) {
     for (let i = 0; i < tw; i++) {
       const k = j * tw + i;
       if (!ok(k)) continue;
       dep[k] = scatter && cnt[k] ? acc[k] / cnt[k] : depth_at(left + (i + 0.5) * t, upper - (j + 0.5) * t);
-      z[k] = base[k] - dep[k];
+      z[k] = base[k] - jitter * dep[k];
     }
   }
 
@@ -260,7 +262,7 @@ export async function customer_glb({ positions, res, placement: P, look, mesh_mm
     for (let a = 0; a < L; a++) {
       const p = loop[a], q = loop[(a + 1) % L], len = Math.hypot(q[0] - p[0], q[1] - p[1]);
       const zp = p[2], zq = q[2];
-      if (Math.max(zp, zq) < 1e-4) { along += len; continue; }
+      if (Math.max(zp, zq) < 1e-3 * t) { along += len; continue; } // relative to the part: a fixed mm cut-off is a ruler
       const np = smooth_n(segn[(a + L - 1) % L], segn[a]), nq = smooth_n(segn[(a + 1) % L], segn[a]), v0 = wpos.length / 3;
       for (const [[x, y], zz, nn, sa] of [[p, 0, np, along], [q, 0, nq, along + len], [q, zq, nq, along + len], [p, zp, np, along]]) {
         wpos.push(x, y, zz);
