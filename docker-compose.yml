@@ -13,6 +13,17 @@ services:
     networks:
       - emucraft
 
+  # Laser engraving API (laser/server.mjs): POST /api/laser/render -> customer GLB
+  laser:
+    build: ./laser
+    image: emucraft-laser:latest
+    container_name: emucraft-laser
+    restart: unless-stopped
+    expose:
+      - "8001"
+    networks:
+      - emucraft
+
 networks:
   emucraft:
     external: true

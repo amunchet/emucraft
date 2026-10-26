@@ -271,6 +271,61 @@ Model (`laser/src/sim.js`):
 
 Sample: `laser/samples/` has a parametric full-size 1911 grip panel with a strong crown (7.6 mm thick at the centre, ~3.3 mm at the edges before the round-over) (`node make_1911_grip.mjs` writes `1911_grip.stl`) and a full-coverage design that bleeds past the panel edges (`1911_grip_design.png`, drawn by `make_1911_bitmap.mjs`, which needs playwright and a Chromium). Load both, then set W = 47 mm (aspect locked), X = Y = 0.125 and angle 0 to line the design up with the panel.
 
+### Customer GLB API (`laser/server.mjs`)
+A small Node service runs the same simulation and returns **one `.glb` file** to hand to a three.js frontend. The file shows the engraved part faithfully but does not carry the solid itself.
+
+Run it with `cd laser && npm install && node server.mjs`. It listens on `127.0.0.1:8001`; set `HOST`, `PORT`, `LASER_JOBS` (concurrent jobs, default 2) and `LASER_TIMEOUT_S` (default 300) to change that. With Docker, `docker compose up -d --build` also starts the `emucraft-laser` container. Route it in Caddy ahead of the main viewer:
+
+```
+handle /api/laser/* {
+    reverse_proxy emucraft-laser:8001
+}
+```
+
+- `GET /api/laser/info` returns the material presets, the laser defaults and the output defaults.
+- `POST /api/laser/render` takes a JSON job and returns `model/gltf-binary`. A summary goes in the `X-Laser-Summary` header (texture size, triangle counts, max depth, spot sizes). A bad job gets `400 {"error": "..."}`; unknown fields are rejected, not ignored. When `LASER_JOBS` jobs are already running, it returns `503`.
+
+```json
+{
+  "model": { "format": "stl", "data": "<base64 STL (binary or ASCII) or OBJ text>" },
+  "image": { "data": "<base64 PNG or JPEG>" },
+  "placement": { "cx": 0.125, "cy": 0.125, "angle_deg": 0, "width_mm": 47 },
+  "laser": { "focus_offset_mm": -2, "passes": 10 },
+  "supersample": 2,
+  "material": { "preset": "super_rosewood", "tex_scale_mm": 80 },
+  "output": { "mesh_mm": 0.5, "max_texture": 2048, "true_scale": false }
+}
+```
+
+Field defaults:
+- **Placement:** the same frame and numbers the app's Alignment panel shows (model centred in XY, lowest point at Z = 0). If width and height are both left out, one pixel equals one spot. If only one is given, the other keeps the image's aspect ratio.
+- **`laser`:** any subset of the simulator's laser parameters.
+- **`material`:** a preset, optionally overriding `color`, `mark`, `rough`, `metal`, `mark_rough` and `mark_metal`, or supplying a custom base `texture` (base64 image).
+- **`output.mesh_mm`:** the geometry resolution.
+- **`output.max_texture`:** caps the texture size.
+- **`output.true_scale`:** keeps real size in metres. By default the part is scaled so its longest side is 1.
+
+What the file contains:
+- **Shape:** only the side the laser sees, as an open shell. The front relief is sampled every `mesh_mm` (0.5 mm by default) from the *unengraved* surface, and the outline walls drop to the base. There is no back, no closed volume, and no real-world scale unless asked for. Names and metadata are stripped.
+- **Detail:** fine detail is in the textures. Colour holds the material and the burn marks, a tangent-space normal map holds the engraving and the fine surface shape, a packed texture holds roughness, metalness and clearcoat, and an alpha mask cuts the exact outline and holes.
+- **Size:** about 5–7 MB for the sample grip (the full-detail app export is about 78 MB). It passes the Khronos glTF validator with no errors or warnings.
+
+Limits of the protection: anything a browser can display can be captured, so this makes reverse engineering impractical, not impossible.
+- The silhouette and the front shape at `mesh_mm` resolution are visible by nature.
+- Someone could rebuild an approximate front surface by integrating the normal map.
+- They could close it into a plausible solid by hand.
+- They would not get the back, mating features, true dimensions, or engraving depths as geometry.
+
+Raise `mesh_mm` for coarser geometry; the normal map keeps the render looking the same.
+
+Viewing: `laser/viewer.html` is a reference customer viewer. It is plain three.js with the simulator's studio lighting; open it with `?src=<glb url>` or drop a file on it. Any `GLTFLoader` setup works:
+
+```js
+const gltf = await new GLTFLoader().loadAsync('/part.glb'); // from POST /api/laser/render
+scene.add(gltf.scene);              // Y up, longest side 1 (unless true_scale)
+controls.maxPolarAngle = Math.PI * 0.55; // there is no back: keep the camera above the part
+```
+
 Limitations and next steps: STEP/IGES import (would need occt-import-js), lasers that don't fire straight down or rotary axes, heightmap export, and splitting the 720 kB bundle into smaller chunks.
 
 ## Performance
