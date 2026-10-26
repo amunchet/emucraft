@@ -280,6 +280,7 @@ Run it with `cd laser && npm install && node server.mjs`. It listens on `127.0.0
 - `LASER_TIMEOUT_S`: per-job time limit (default 300)
 - `LASER_MAX_MB`: request body cap (default 64)
 - `LASER_TOKEN`: if set, requests must send `Authorization: Bearer <token>`
+- `LASER_SECRET`: keys the per-part size factor (below). If unset, a random one is made at each start, so a restart gives the same part a new factor.
 
 With Docker, `docker compose up -d --build` also starts the `emucraft-laser` container, capped at 4 GB of memory and 4 CPUs.
 
@@ -319,7 +320,8 @@ Field defaults:
 - **`output.true_scale`:** keeps real size in metres. By default the part is scaled so its longest side is 1.
 
 What the file contains:
-- **Shape:** only the side the laser sees, as an open shell. The front relief is sampled every `mesh_mm` (0.5 mm by default) from the *unengraved* surface, and the outline walls drop to the base. There is no back, no closed volume, and no real-world scale unless asked for. Names and metadata are stripped. The material texture's tile size is varied by ±10 % per render, so the texture period can't be used as a ruler.
+- **Shape:** only the side the laser sees, as an open shell. The front relief is sampled every `mesh_mm` (0.5 mm by default) from the *unengraved* surface, and the outline walls drop to the base. There is no back, no closed volume, and no real-world scale unless asked for. Names and metadata are stripped.
+- **Scale hiding:** every length the file is built from in mm is scaled by the same factor: the mesh pitch, the material tile and the texel floor. The factor is between 0.9 and 1.1, so the file gives the real size only to within ±10 %. It comes from an HMAC of the part's geometry, so rendering the same part again returns the same factor and repeated renders can't be averaged to narrow it down. `true_scale` turns this off.
 - **Detail:** fine detail is in the textures. Colour holds the material and the burn marks, a tangent-space normal map holds the engraving and the fine surface shape, a packed texture holds roughness, metalness and clearcoat, and an alpha mask cuts the exact outline and holes.
 - **Size:** about 5–7 MB for the sample grip (the full-detail app export is about 78 MB). It passes the Khronos glTF validator with no errors or warnings.
 

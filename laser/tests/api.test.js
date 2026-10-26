@@ -36,6 +36,17 @@ const parse = (glb) => {
   return { json, floats };
 };
 
+// the wall texture period in file units: u runs along the wall at 1 / tile_mm per mm
+const wall_tile_mm = (json, floats) => {
+  const wall = json.meshes[0].primitives[1], pos = floats(wall.attributes.POSITION), uv = floats(wall.attributes.TEXCOORD_0);
+  let best = 0, ratio = 0;
+  for (let q = 0; q < pos.length / 3; q += 4) { // quads: (p, 0), (q, 0), (q, zq), (p, zp)
+    const len = Math.hypot(pos[(q + 1) * 3] - pos[q * 3], pos[(q + 1) * 3 + 2] - pos[q * 3 + 2]);
+    if (len > best) { best = len; ratio = len / Math.abs(uv[(q + 1) * 2] - uv[q * 2]); }
+  }
+  return ratio;
+};
+
 describe('customer GLB', () => {
   const positions = plate(), placement = { cx: 0, cy: 0, angle: 0.2, width_mm: 24, height_mm: 16 }, p = PRESETS.super_walnut;
   const laser = { ...DEFAULT_LASER, passes: 10 };
@@ -88,6 +99,18 @@ describe('customer GLB', () => {
     // the hole is cut out by the alpha mask
     const hx = Math.round(((8 + 15) / 30) * col.width), hy = col.height >> 1;
     expect(col.data[(hy * col.width + hx) * 4 + 3]).toBe(0);
+  });
+
+  it('scales every mm length by the jitter, so the file gives the size only to within it', async () => {
+    const { json, floats } = parse((await customer_glb({ positions, res, placement, look, mesh_mm: 1, max_texture: 512, jitter: 1.07 }, png)).glb);
+    const [relief, wall] = json.meshes[0].primitives, k_s = 1 / 30; // plate: longest side 30 mm
+    // relief grid pitch: (1 mm x 1.07) in file units, not 1 mm
+    const xs = [...new Set(floats(relief.attributes.POSITION).filter((_, k) => k % 3 === 0))];
+    const pairs = (d) => xs.reduce((n, x) => n + xs.filter((y) => Math.abs(y - x - d) < 2e-5).length, 0);
+    expect(pairs(1.07 * k_s)).toBeGreaterThan(20);
+    expect(pairs(1.07 * k_s)).toBeGreaterThan(5 * pairs(k_s));
+    // wall texture period: (80 mm x 1.07)
+    expect(wall_tile_mm(json, floats) / 1.07).toBeCloseTo(80 * k_s, 4);
   });
 
   it('true_scale keeps metres', async () => {
@@ -170,6 +193,23 @@ describe('HTTP API', () => {
     expect(Object.keys(summary)).not.toContain('scale');
     expect(Object.keys(summary)).not.toContain('texel_mm');
   }, 60000);
+
+  it('keys the size factor to the part: same file scale on a re-render, within ±10 %', async () => {
+    const tile = async (srv) => {
+      const r = await fetch(`http://127.0.0.1:${srv.address().port}/api/laser/render`, { method: 'POST', body: JSON.stringify(job()) });
+      expect(r.status).toBe(200);
+      const { json, floats } = parse(new Uint8Array(await r.arrayBuffer()));
+      return wall_tile_mm(json, floats) * 30; // plate: longest side 30 mm -> tile period in mm as the file implies it
+    };
+    const a = make_server({ secret: 'one' }), b = make_server({ secret: 'two' });
+    await Promise.all([a, b].map((srv) => new Promise((r) => srv.listen(0, '127.0.0.1', r))));
+    const [a1, a2, b1] = [await tile(a), await tile(a), await tile(b)];
+    a.close();
+    b.close();
+    expect(a1).toBeCloseTo(a2, 6);
+    for (const v of [a1, b1]) { expect(v).toBeGreaterThanOrEqual(72); expect(v).toBeLessThanOrEqual(88); }
+    expect(Math.abs(a1 - b1)).toBeGreaterThan(1e-3);
+  }, 120000);
 
   it('checks the bearer token when one is set', async () => {
     const locked = make_server({ token: 'sesame' });

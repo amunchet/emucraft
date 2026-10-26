@@ -13,9 +13,14 @@
 // Rendering is CPU- and memory-heavy: call it from the shop's backend, or set LASER_TOKEN and send
 // 'Authorization: Bearer <token>'. Do not expose it to the public unauthenticated.
 //
+// Unless true_scale is asked for, every mm length the file is built from is scaled by one factor in [0.9, 1.1] keyed
+// to the part (HMAC of its geometry), so the file gives its size only to within ±10 %, and rendering the same part
+// again does not narrow that down. Set LASER_SECRET to keep the factor across restarts; unset, it is new per process.
+//
 // Run: node server.mjs   (env: HOST=127.0.0.1, PORT=8001, LASER_JOBS=2 concurrent jobs, LASER_TIMEOUT_S=300,
-//   LASER_MAX_MB=64 request body cap, LASER_TOKEN unset = no auth)
+//   LASER_MAX_MB=64 request body cap, LASER_TOKEN unset = no auth, LASER_SECRET unset = random per process)
 import http from 'node:http';
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { Worker, parentPort, workerData } from 'node:worker_threads';
 import { fileURLToPath } from 'node:url';
 import { PNG } from 'pngjs';
@@ -49,6 +54,9 @@ const b64 = (v, what) => {
   if (typeof v !== 'string' || !v) throw bad(`${what} must be a base64 string`);
   return Buffer.from(v, 'base64');
 };
+// the part's size factor: deterministic per (secret, geometry), uniform in [0.9, 1.1]
+const size_jitter = (secret, positions) =>
+  0.9 + 0.2 * (createHmac('sha256', secret).update(Buffer.from(positions.buffer, positions.byteOffset, positions.byteLength)).digest().readUInt32BE(0) / 2 ** 32);
 const linear = (hex, what) => {
   if (!/^#[0-9a-f]{6}$/i.test(hex)) throw bad(`${what} must be a #rrggbb colour`);
   return new THREE.Color(hex).toArray(); // three's working space is linear sRGB
@@ -71,7 +79,7 @@ function decode_image(buf, what) {
 }
 
 // The whole job, inside a worker thread: validate, load, simulate, build the GLB.
-async function render(body) {
+async function render(body, secret) {
   let job;
   try { job = JSON.parse(Buffer.from(body).toString('utf8')); } catch (err) { throw bad(`body is not JSON: ${err.message}`); }
   only(job, ['model', 'image', 'placement', 'laser', 'supersample', 'material', 'output'], 'job');
@@ -122,9 +130,7 @@ async function render(body) {
     mark_rough: num(mat.mark_rough ?? p.mark_rough, 'material.mark_rough', [0, 1]), mark_metal: num(mat.mark_metal ?? p.mark_metal, 'material.mark_metal', [0, 1]),
     mark_full: p.mark_full, clearcoat: p.clearcoat || 0, clearcoat_rough: p.clearcoat_rough ?? 0.03,
     tile: custom || (p.tex ? { px: procedural_pixels(p.tex, 1024), w: 1024, h: 1024 } : null),
-    // a texture's period is a ruler: unless true_scale was asked for, vary it a little per render so the unit-less
-    // file does not give the real size away
-    tile_mm: num(mat.tex_scale_mm ?? DEFAULTS.tex_scale_mm, 'material.tex_scale_mm', [1, 1000]) * (job.output?.true_scale ? 1 : 0.9 + 0.2 * Math.random()),
+    tile_mm: num(mat.tex_scale_mm ?? DEFAULTS.tex_scale_mm, 'material.tex_scale_mm', [1, 1000]),
     laminate: !custom && p.tex?.startsWith('super_'), rough_tile: !custom && p.tex === 'brushed',
   };
   const out = only(job.output, ['mesh_mm', 'max_texture', 'true_scale'], 'output');
@@ -141,6 +147,7 @@ async function render(body) {
     mesh_mm: num(out.mesh_mm ?? DEFAULTS.mesh_mm, 'output.mesh_mm', [0.1, 2]),
     max_texture: Math.round(num(out.max_texture ?? DEFAULTS.max_texture, 'output.max_texture', [256, 8192])),
     true_scale: out.true_scale ?? DEFAULTS.true_scale,
+    jitter: out.true_scale ? 1 : size_jitter(secret, positions),
   }, (px, w, h) => PNG.sync.write({ width: w, height: h, data: Buffer.from(px.buffer, px.byteOffset, px.byteLength) }, { colorType: 6 }));
   // nothing in mm that would give the part's size away if the summary reaches a browser
   return { glb, summary: { texture: summary.texture, relief_triangles: summary.relief_triangles, wall_triangles: summary.wall_triangles, max_depth_mm: res.max_depth, bytes: glb.byteLength } };
@@ -149,7 +156,7 @@ async function render(body) {
 // Inside a job thread: run the job and post the result back.
 if (workerData?.laser_job) {
   try {
-    const { glb, summary } = await render(workerData.body);
+    const { glb, summary } = await render(workerData.body, workerData.secret);
     parentPort.postMessage({ ok: true, glb, summary }, [glb.buffer]);
   } catch (err) {
     parentPort.postMessage({ ok: false, status: err.status || 500, message: err.message || String(err) });
@@ -158,11 +165,11 @@ if (workerData?.laser_job) {
 
 // HTTP server; jobs beyond `jobs` concurrent ones get 503. A job's slot is held from before its body is read until
 // it ends, and a job whose client has gone away is stopped.
-export function make_server({ jobs = 2, timeout_s = 300, max_mb = 64, token = '' } = {}) {
-  const max_body = max_mb * 1024 * 1024;
+export function make_server({ jobs = 2, timeout_s = 300, max_mb = 64, token = '', secret = randomBytes(32) } = {}) {
+  const max_body = max_mb * 1024 * 1024, auth = Buffer.from(`Bearer ${token}`);
   let running = 0;
   const run = (body, out) => new Promise((resolve, reject) => {
-    const w = new Worker(fileURLToPath(import.meta.url), { workerData: { laser_job: true, body }, transferList: [body.buffer] });
+    const w = new Worker(fileURLToPath(import.meta.url), { workerData: { laser_job: true, body, secret }, transferList: [body.buffer] });
     const stop = (err) => { clearTimeout(timer); out.off('close', gone); w.terminate(); reject(err); };
     const gone = () => stop(Object.assign(new Error('client went away'), { status: 499 }));
     const timer = setTimeout(() => stop(Object.assign(new Error(`job took longer than ${timeout_s} s`), { status: 504 })), timeout_s * 1000);
@@ -175,6 +182,7 @@ export function make_server({ jobs = 2, timeout_s = 300, max_mb = 64, token = ''
     out.writeHead(status, { 'Content-Type': type, 'Content-Length': Buffer.byteLength(body), 'Cache-Control': 'no-store', ...extra });
     out.end(body);
   };
+  const same = (header, want) => { const got = Buffer.from(header || ''); return got.length === want.length && timingSafeEqual(got, want); };
   const fail = (out, status, message) => send(out, status, JSON.stringify({ error: message }), 'application/json');
   return http.createServer(async (req, out) => {
     const path = new URL(req.url, 'http://x').pathname;
@@ -186,7 +194,7 @@ export function make_server({ jobs = 2, timeout_s = 300, max_mb = 64, token = ''
       }
       if (path !== '/api/laser/render') return fail(out, 404, 'not found');
       if (req.method !== 'POST') return fail(out, 405, 'use POST');
-      if (token && req.headers.authorization !== `Bearer ${token}`) return fail(out, 401, 'missing or wrong bearer token');
+      if (token && !same(req.headers.authorization, auth)) return fail(out, 401, 'missing or wrong bearer token');
       if (Number(req.headers['content-length']) > max_body) return fail(out, 413, `body over ${max_mb} MB`);
       if (running >= jobs) return fail(out, 503, 'busy: too many jobs running, retry shortly');
       running++;
@@ -212,5 +220,5 @@ export function make_server({ jobs = 2, timeout_s = 300, max_mb = 64, token = ''
 
 if (!workerData?.laser_job && process.argv[1] === fileURLToPath(import.meta.url)) {
   const env = process.env, host = env.HOST || '127.0.0.1', port = Number(env.PORT || 8001);
-  make_server({ jobs: Number(env.LASER_JOBS || 2), timeout_s: Number(env.LASER_TIMEOUT_S || 300), max_mb: Number(env.LASER_MAX_MB || 64), token: env.LASER_TOKEN || '' }).listen(port, host, () => console.log(`laser API on http://${host}:${port}/api/laser/info`));
+  make_server({ jobs: Number(env.LASER_JOBS || 2), timeout_s: Number(env.LASER_TIMEOUT_S || 300), max_mb: Number(env.LASER_MAX_MB || 64), token: env.LASER_TOKEN || '', ...(env.LASER_SECRET && { secret: env.LASER_SECRET }) }).listen(port, host, () => console.log(`laser API on http://${host}:${port}/api/laser/info`));
 }

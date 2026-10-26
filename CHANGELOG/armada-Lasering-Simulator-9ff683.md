@@ -50,3 +50,10 @@ Fixes from a multi-agent review of the laser API.
   - Folded triangles from boundary snapping are dropped.
   - The normal-map frame uses the snapped triangle.
 - **Viewer:** fixed the orbit limit and height-only resizes.
+
+## 2026-10-26 18:23 CDT
+Customer GLB no longer gives away the part's real size.
+- **The leak:** the relief vertex pitch was exactly `mesh_mm` (0.5 mm by default, published by `/api/laser/info`). Since the file is scaled so the longest side is 1, the real size was 0.5 mm ÷ pitch, recoverable to about 0.1 %.
+- **The fix:** `customer_glb` takes a `jitter` factor and applies it to every length it builds from in mm: the mesh pitch, the material tile and the 0.005 mm texel floor. Using one factor for all three means they can't be cross-checked against each other. The API picks the factor in [0.9, 1.1] from an HMAC of the part's geometry, so a re-render of the same part can't be used to average it out. It replaces the per-render `Math.random()` tile jitter. The new `LASER_SECRET` variable keeps the factor stable across restarts.
+- **Also:** the bearer token is now compared in constant time.
+- **Tests:** a unit test for the jitter (mesh pitch and wall UVs), and an API test that the factor is stable per part, stays within ±10 % and depends on the secret.
