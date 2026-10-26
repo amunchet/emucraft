@@ -121,6 +121,28 @@ whole units, as on controls with decimal-point input enabled. When no stock
 size is given anywhere, it is estimated from the cutting moves (with a
 warning), which can put the stock top too high if a feed move starts in air.
 
+## Moonshot: robot sanding
+
+[Moonshot](moonshot/README.md) plans how a long cylinder, such as a sanding drum held against a part by a robot,
+touches every point of a solid without hitting the part or its fixture, keeps the drum level with the wood grain,
+steps the contact along the drum between passes so it wears evenly, and writes a FANUC program for Roboguide.
+
+```sh
+pip install -e ".[moonshot]"              # Python 3.10+: numpy, scipy, numba, trimesh, matplotlib
+moonshot-web                              # its web page on http://127.0.0.1:8766/
+moonshot samples/wave_plate.stl --spacing 0.05 --track --out results/plate
+python -m moonshot.fanuc results/plate
+```
+
+- **Web page** (`moonshot-web`, its own server and Docker image): upload a model or pick a sample, plan it, and look at the result
+  in 3D: reach, grain tilt, tracking and passes on every grid point, and the drum wherever you click. Write the
+  robot program and play it back along the part, render the step pictures, and download every file.
+- **MCP server** (`moonshot-mcp`, `pip install -e ".[moonshot-mcp]"`): the same pipeline for an MCP client, run as
+  its own process or container. It is separate from emucraft's own G-code MCP server, `emucraft mcp`.
+- **Command line**: `moonshot` (or `python -m moonshot`) and `python -m moonshot.fanuc`.
+
+Moonshot is optional: without its extras, emucraft installs and runs exactly as before.
+
 ## Jobs with several programs
 
 CAM systems often post one file per toolpath. A finishing program checked on
@@ -283,13 +305,21 @@ config at `~/.config/emucraft/mcp.json` (override with
 result names the config it used.
 
 ## Web Deployment
-The Docker image runs the web viewer (`emucraft serve`) on port 8000.  It has no authentication of its own - it's meant to sit behind a reverse proxy (Caddy) that handles that.
+Each web app has its own Docker image, and none has authentication of its own - they are meant to sit behind a reverse proxy (Caddy) that handles that:
+
+| Service | Image, built from | Serves |
+|---|---|---|
+| `emucraft` | `Dockerfile` | the G-code viewer (`emucraft serve`) on port 8000 |
+| `moonshot` | `moonshot/Dockerfile` (repository root as context) | Moonshot's web page (`moonshot-web`) on port 8000, models and runs in the `moonshot-web` volume |
+| `laser` | `laser/Dockerfile` | the laser engraving simulator, a static build served by nginx on port 80 |
+| `moonshot-mcp` | the `moonshot` image | Moonshot's MCP server on port 8000 (`/mcp`), its own `moonshot-mcp` volume; only with `--profile moonshot-mcp` |
 
 The compose file joins an **external** Docker network (`emucraft` by default, override with `EMUCRAFT_NETWORK`) and publishes no ports:
 
 ```bash
 docker network create emucraft   # once, if your Caddy stack doesn't already create it
-docker compose up -d --build
+docker compose up -d --build                                            # emucraft, moonshot, laser
+MOONSHOT_TOKEN=... docker compose --profile moonshot-mcp up -d --build  # also Moonshot's MCP server
 ```
 
 Then, in the Caddy stack (attached to the same network):
@@ -299,11 +329,44 @@ emucraft.example.com {
     # ...your auth...
     reverse_proxy emucraft:8000
 }
+moonshot.example.com {
+    # ...your auth...
+    reverse_proxy moonshot:8000
+}
+laser.example.com {
+    reverse_proxy laser:80
+}
 ```
 
-Serve it at the root of a (sub)domain: the viewer calls `/api/...` with absolute paths, so a path prefix won't work.
+Serve each at the root of a (sub)domain: the viewer and Moonshot's page call `/api/...` with absolute paths, so a path prefix won't work. Moonshot's MCP server checks `MOONSHOT_TOKEN` itself (set `MOONSHOT_URL` to its public address for download links); see [moonshot/README.md](moonshot/README.md#mcp-server).
 
 The viewer lists the bundled `examples/` plus anything in `/programs` inside the container; uncomment the volume in `docker-compose.yml` to mount your own folder (an `emucraft.toml` there is picked up as the default config).
+
+## Laser engraving simulator (`laser/`)
+A separate, browser-based section of Emucraft that simulates laser engraving a bitmap into a solid and renders the result with three.js for customer-facing previews.
+
+Run it: `cd laser && npm install && npm run dev` (tests: `npm test`, production bundle: `npm run build`).
+
+Inputs:
+- A model: STL, OBJ, GLB/GLTF. It is centred in XY with its lowest point at Z = 0. The laser fires along -Z.
+- A bitmap: any browser-readable image, converted to greyscale. By default black removes the most material and white removes none (`invert` flips this). Transparent pixels are not burned.
+- A built-in demo plate and bitmap load on startup.
+
+Workflow:
+1. **Align**: the image is projected straight down onto the model. Drag to move it, Shift+drag to rotate (hold Ctrl as well to snap to 15°), Alt/Ctrl+wheel to scale, or type values. By default one pixel is one spot at focus; "Fit to model" scales the image to the part instead.
+2. **Laser**: set spot size at focus, lens focal length, beam diameter at the lens, focus offset, power and rated power, depth per pass, passes, ablation threshold and gamma.
+3. **Simulate**: runs in a Web Worker (`src/worker.js` → `src/sim.js`).
+4. **Result**: choose a material preset (anodized aluminium, stainless, brass, acrylic, walnut, maple, slate, and Altamont's Super Rosewood / Super Blackwood / Super Walnut Dymondwood) or upload a custom texture. The Dymondwood presets are dyed veneers stacked in Z and coloured by height, so a flat face shows one layer, curvature shows contour bands, and deep cuts expose the layers underneath. The texture scale sets the veneer thickness: scale ÷ 144, so the default 80 mm gives about 0.55 mm. Adjust lighting and exposure. Export a GLB for the website or a PNG screenshot.
+
+Model (`laser/src/sim.js`):
+- The top surface under the image is rasterized into a height grid. The grid uses the image pixels, optionally supersampled, and is capped at 4M cells.
+- The spot diameter at a distance dz from the focal plane is `d = sqrt(spot² + (dz · D / f)²)`. Here D is the beam diameter at the lens and f is the focal length, so the Rayleigh range is `spot · f / D`.
+- The focal plane sits at the highest point under the footprint, plus the focus offset.
+- Passes are simulated in up to 24 steps. In each step every cell removes `max(0, grey · power/max · (spot/d)² − threshold) / (1 − threshold) · depth_per_pass`. That removal is spread by a Gaussian with σ = d/4, using the cell's own current defocus. Deeper cuts therefore grow wider, shallower and fuzzier.
+
+Sample: `laser/samples/` has a parametric full-size 1911 grip panel with a strong crown (7.6 mm thick at the centre, ~3.3 mm at the edges before the round-over) (`node make_1911_grip.mjs` writes `1911_grip.stl`) and a full-coverage design that bleeds past the panel edges (`1911_grip_design.png`, drawn by `make_1911_bitmap.mjs`, which needs playwright and a Chromium). Load both, then set W = 47 mm (aspect locked), X = Y = 0.125 and angle 0 to line the design up with the panel.
+
+Limitations and next steps: STEP/IGES import (would need occt-import-js), lasers that don't fire straight down or rotary axes, heightmap export, and splitting the 720 kB bundle into smaller chunks.
 
 ## Performance
 
@@ -325,7 +388,10 @@ before sweeping, and runs row bands on all cores.
 make -C kernel test        # C unit tests: sweeps against brute-force references
 make -C kernel             # native library + WebAssembly (needs clang with wasm32/wasm-ld)
 python -m pytest           # Python suite; WASM/native parity tests need Node.js
+pip install -e ".[moonshot-dev]" && python -m pytest tests/moonshot   # Moonshot (Python 3.10+, about 5 minutes)
 ```
+
+`tests/moonshot/` is skipped when Moonshot's dependencies are not installed.
 
 - `emucraft/web/wasm/emucraft.wasm` is committed so the viewer works without
   clang; rebuild it after changing `kernel/src/emucraft.c`.

@@ -12,3 +12,10 @@ a.out
 *.block
 images/**
 *.opt.nc
+!samples/*.stl
+# Moonshot: data of `emucraft serve` and the MCP server, local runs, pictures, customer parts
+/moonshot-data/
+/serve/
+/results/
+assets/**
+ingest/**

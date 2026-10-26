@@ -17,13 +17,15 @@ jobs:
           python-version: ${{ matrix.python }}
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
       - name: Kernel unit tests
         run: make -C kernel native test
       - name: Install
         run: pip install -e ".[dev,mcp]"
       - name: Python tests (includes WebAssembly/native parity)
         run: python -m pytest -q
+      - name: Laser simulator tests
+        run: cd laser && npm ci && npm test
       - name: Check the examples
         run: |
           emucraft check examples/makino_roughing.nc examples/pocket_corners.nc --junit junit.xml --html report.html
@@ -35,3 +37,19 @@ jobs:
           path: |
             junit.xml
             report*.html
+
+  moonshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install with Moonshot
+        run: pip install -e ".[moonshot-dev]"
+      - name: Moonshot tests (pipeline, robot program, MCP server, web page)
+        run: python -m pytest -q tests/moonshot
+      - name: Plan a sample from the command line
+        run: |
+          moonshot samples/wave_plate.stl --spacing 0.05 --track --out results/plate
+          python -m moonshot.fanuc results/plate
