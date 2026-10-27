@@ -2,6 +2,7 @@
 #   emucraft      G-code viewer             http://emucraft:8000
 #   moonshot      Moonshot's web page       http://moonshot:8000
 #   laser         laser engraving simulator http://laser:80
+#   laser-api     laser customer GLB API    http://laser-api:8001/api/laser/  (for the shop's backend)
 #   moonshot-mcp  Moonshot's MCP server     http://moonshot-mcp:8000/mcp  (only with --profile moonshot-mcp)
 services:
   emucraft:
@@ -38,6 +39,25 @@ services:
     restart: unless-stopped
     expose:
       - "80"
+    networks:
+      - emucraft
+
+  # Laser customer GLB API (laser/server.mjs): POST /api/laser/render -> customer GLB. Rendering is CPU- and
+  # memory-heavy, so it is capped; set LASER_TOKEN unless only the shop's backend can reach it.
+  laser-api:
+    build:
+      context: laser
+      dockerfile: Dockerfile.api
+    image: emucraft-laser-api:latest
+    container_name: laser-api
+    restart: unless-stopped
+    mem_limit: 4g
+    cpus: 4
+    expose:
+      - "8001"
+    environment:
+      - LASER_TOKEN=${LASER_TOKEN:-}
+      - LASER_SECRET=${LASER_SECRET:-}
     networks:
       - emucraft
 

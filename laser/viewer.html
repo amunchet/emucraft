@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Part Viewer</title>
+<link rel="icon" href="data:,">
+<style>
+  html, body { margin: 0; height: 100%; background: #2a2f38; overflow: hidden; font: 13px system-ui, sans-serif; color: #c9ced8; }
+  canvas { display: block; width: 100%; height: 100%; outline: none; }
+  #hint { position: absolute; left: 12px; bottom: 10px; opacity: .7; pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="hint">Drop a .glb from the laser API, or open with ?src=&lt;url&gt;</div>
+<script type="module" src="./src/viewer.js"></script>
+</body>
+</html>
