@@ -121,6 +121,28 @@ whole units, as on controls with decimal-point input enabled. When no stock
 size is given anywhere, it is estimated from the cutting moves (with a
 warning), which can put the stock top too high if a feed move starts in air.
 
+## Moonshot: robot sanding
+
+[Moonshot](moonshot/README.md) plans how a long cylinder, such as a sanding drum held against a part by a robot,
+touches every point of a solid without hitting the part or its fixture, keeps the drum level with the wood grain,
+steps the contact along the drum between passes so it wears evenly, and writes a FANUC program for Roboguide.
+
+```sh
+pip install -e ".[moonshot]"              # Python 3.10+: numpy, scipy, numba, trimesh, matplotlib
+moonshot-web                              # its web page on http://127.0.0.1:8766/
+moonshot samples/wave_plate.stl --spacing 0.05 --track --out results/plate
+python -m moonshot.fanuc results/plate
+```
+
+- **Web page** (`moonshot-web`, its own server and Docker image): upload a model or pick a sample, plan it, and look at the result
+  in 3D: reach, grain tilt, tracking and passes on every grid point, and the drum wherever you click. Write the
+  robot program and play it back along the part, render the step pictures, and download every file.
+- **MCP server** (`moonshot-mcp`, `pip install -e ".[moonshot-mcp]"`): the same pipeline for an MCP client, run as
+  its own process or container. It is separate from emucraft's own G-code MCP server, `emucraft mcp`.
+- **Command line**: `moonshot` (or `python -m moonshot`) and `python -m moonshot.fanuc`.
+
+Moonshot is optional: without its extras, emucraft installs and runs exactly as before.
+
 ## Jobs with several programs
 
 CAM systems often post one file per toolpath. A finishing program checked on
@@ -199,6 +221,37 @@ Tool values are applied in this order, later winning: program comments,
 where each value came from. Holder checks need both `holder_diameter` and
 `stickout`.
 
+### Reading tool data from comments
+
+Tool and stock values come from CAM comments in three ways, all adjustable
+in the config:
+
+- **Comment rules** match known header formats (`DIAMETER:`,
+  `Tool Holder Diameter:`, `FLUTE LENGTH:`, `SHANK DIA:`, `MIN X:` ...).
+  `[[comment_rules]]` adds regexes that run before the built-in ones.
+- **Variable rules** read macro variables: `#127` is the holder length and
+  `#128` the stick-out by default. `[variable_rules]` adds or remaps them.
+- **Label aliases** catch any other `(label: value)` comment whose label is
+  close to a known name, forgiving case, punctuation and typos:
+  `(HOLDER DIAMTER: 2)`, `(Tool-Holder Length = 3.5)`, `(LOC .75)`. Aliases are
+  only tried when no rule matched. Aliases shorter than five letters (`dia`,
+  `loc`) must match exactly. A loose match is listed as a `comment-label` info
+  message. `[check] fuzz_threshold` (0-1, default 0.85) sets how close a label
+  must be, and 1 means exact only. `[comment_aliases]` replaces the alias list
+  of a target:
+
+```toml
+[check]
+fuzz_threshold = 0.9
+
+[comment_aliases]
+"tool.stickout" = ["stickout", "gauge from holder"]
+"tool.flute_length" = ["flute length", "loc", "length of cut"]
+```
+
+A length followed by `mm`, `in` or `"` is converted to the program's units
+once they are known. `emucraft info part.nc` lists what was read.
+
 ## In CI
 
 `emucraft check` exits with 0 when there are no collisions, 1 on collisions
@@ -224,14 +277,50 @@ jobs:
         with: { name: emucraft-report, path: "report*.html" }
 ```
 
+## MCP server
+
+`emucraft mcp` serves Emucraft over the Model Context Protocol (stdio), so a
+generative CAM pipeline or an agent can check each program it produces. It
+needs Python 3.10+ and the `mcp` extra:
+
+```sh
+pip install -e ".[mcp]"
+```
+
+```json
+{"mcpServers": {"emucraft": {"command": "emucraft", "args": ["mcp"]}}}
+```
+
+| Tool | What it does |
+|---|---|
+| `check_program` | Full collision check. Returns status, issues with lines and depths, interpreter messages, and the tool geometry with where each value came from. Takes `stock`, per-tool `tools` overrides and `resolution` |
+| `program_info` | What was read from comments and macro variables, with each value's line and text, without simulating. Pass a few comment lines as `gcode` to try detection settings |
+| `get_settings` / `update_settings` / `reset_settings` | View and change the server's saved settings, mainly comment detection (`comment_aliases`, `comment_rules`, `variable_rules`, `check.fuzz_threshold`) and tool defaults |
+
+Programs are passed as a file `path` or inline `gcode`. Each call uses the
+first config it finds: `config_path`, an `emucraft.toml` next to the program,
+then the saved settings. The saved settings are an ordinary emucraft JSON
+config at `~/.config/emucraft/mcp.json` (override with
+`EMUCRAFT_MCP_CONFIG`), so `emucraft check -c` can use them too. Every
+result names the config it used.
+
 ## Web Deployment
-The Docker image runs the web viewer (`emucraft serve`) on port 8000.  It has no authentication of its own - it's meant to sit behind a reverse proxy (Caddy) that handles that.
+Each web app has its own Docker image, and none has authentication of its own - they are meant to sit behind a reverse proxy (Caddy) that handles that:
+
+| Service | Image, built from | Serves |
+|---|---|---|
+| `emucraft` | `Dockerfile` | the G-code viewer (`emucraft serve`) on port 8000 |
+| `moonshot` | `moonshot/Dockerfile` (repository root as context) | Moonshot's web page (`moonshot-web`) on port 8000, models and runs in the `moonshot-web` volume |
+| `laser` | `laser/Dockerfile` | the laser engraving simulator, a static build served by nginx on port 80 |
+| `laser-api` | `laser/Dockerfile.api` | the laser customer GLB API (`laser/server.mjs`) on port 8001; call it from the shop's backend, see [Customer GLB API](#customer-glb-api-laserservermjs) |
+| `moonshot-mcp` | the `moonshot` image | Moonshot's MCP server on port 8000 (`/mcp`), its own `moonshot-mcp` volume; only with `--profile moonshot-mcp` |
 
 The compose file joins an **external** Docker network (`emucraft` by default, override with `EMUCRAFT_NETWORK`) and publishes no ports:
 
 ```bash
 docker network create emucraft   # once, if your Caddy stack doesn't already create it
-docker compose up -d --build
+docker compose up -d --build                                            # emucraft, moonshot, laser, laser-api
+MOONSHOT_TOKEN=... docker compose --profile moonshot-mcp up -d --build  # also Moonshot's MCP server
 ```
 
 Then, in the Caddy stack (attached to the same network):
@@ -241,9 +330,16 @@ emucraft.example.com {
     # ...your auth...
     reverse_proxy emucraft:8000
 }
+moonshot.example.com {
+    # ...your auth...
+    reverse_proxy moonshot:8000
+}
+laser.example.com {
+    reverse_proxy laser:80
+}
 ```
 
-Serve it at the root of a (sub)domain: the viewer calls `/api/...` with absolute paths, so a path prefix won't work.
+Serve each at the root of a (sub)domain: the viewer and Moonshot's page call `/api/...` with absolute paths, so a path prefix won't work. Moonshot's MCP server checks `MOONSHOT_TOKEN` itself (set `MOONSHOT_URL` to its public address for download links); see [moonshot/README.md](moonshot/README.md#mcp-server).
 
 The viewer lists the bundled `examples/` plus anything in `/programs` inside the container; uncomment the volume in `docker-compose.yml` to mount your own folder (an `emucraft.toml` there is picked up as the default config).
 
@@ -282,13 +378,13 @@ Run it with `cd laser && npm install && node server.mjs`. It listens on `127.0.0
 - `LASER_TOKEN`: if set, requests must send `Authorization: Bearer <token>`
 - `LASER_SECRET`: keys the per-part size factor (below). If unset, a random one is made at each start, so a restart gives the same part a new factor.
 
-With Docker, `docker compose up -d --build` also starts the `emucraft-laser` container, capped at 4 GB of memory and 4 CPUs.
+With Docker, `docker compose up -d --build` also starts the `laser-api` container (built from `laser/Dockerfile.api`), capped at 4 GB of memory and 4 CPUs. Set `LASER_TOKEN` and `LASER_SECRET` in the environment that runs compose to pass them through.
 
 A render of the sample grip takes about 30 s of CPU and peaks at about 0.5 GB of memory. Call it from the shop's backend and pass the GLB on to the browser, or set `LASER_TOKEN`. Don't route it publicly without authentication. If the backend reaches it through Caddy:
 
 ```
 handle /api/laser/* {
-    reverse_proxy emucraft-laser:8001
+    reverse_proxy laser-api:8001
 }
 ```
 
@@ -363,7 +459,10 @@ before sweeping, and runs row bands on all cores.
 make -C kernel test        # C unit tests: sweeps against brute-force references
 make -C kernel             # native library + WebAssembly (needs clang with wasm32/wasm-ld)
 python -m pytest           # Python suite; WASM/native parity tests need Node.js
+pip install -e ".[moonshot-dev]" && python -m pytest tests/moonshot   # Moonshot (Python 3.10+, about 5 minutes)
 ```
+
+`tests/moonshot/` is skipped when Moonshot's dependencies are not installed.
 
 - `emucraft/web/wasm/emucraft.wasm` is committed so the viewer works without
   clang; rebuild it after changing `kernel/src/emucraft.c`.

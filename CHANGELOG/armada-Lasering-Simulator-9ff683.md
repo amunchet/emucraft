@@ -72,3 +72,9 @@ The customer GLB is now a faithful render of a stand-in part. The stand-in is th
 - **Why:** a second adversarial pass showed that the laser itself was still a ruler. The spot blur (0.05 mm), defocus over the part's height, and `max_depth_mm` all stayed in real mm while the rest of the file was jittered, which gave the size to within 0.01–2.6 %. Now every channel measures the stand-in, so the real size is known only to within ±10 %.
 - **Behaviour change:** a job without `width_mm` or `height_mm` puts 1 px = 1 spot on the stand-in, so the design's size relative to the part varies by up to ±10 %.
 - **Tests:** the API's GLB is byte-for-byte identical to engraving the scaled part and placement directly. The default pixel grid and the tile period both measure the stand-in. Both tests fail if the scaling is removed.
+
+## 2026-10-26 22:48 CDT
+Merged master, which already carried an older snapshot of `laser/` (from commit f1a54c4, via #11) together with its own Docker layout.
+- **Code:** `laser/src`, `package.json` and the lockfile keep this branch's versions. Master's copies were exactly f1a54c4, which this branch builds on.
+- **Docker:** master's `laser/Dockerfile` (the static app served by nginx) stays as it is. The customer GLB API moves to `laser/Dockerfile.api` and runs as a new `laser-api` compose service, with the 4 GB / 4 CPU caps and `LASER_TOKEN`/`LASER_SECRET` passed through. The README deployment table and the Caddy example now point at `laser-api:8001`.
+- **Checked:** both images build, the API answers `/api/laser/info`, the app serves its page, the laser tests pass (33 of 33) and the Vite build succeeds.

@@ -17,6 +17,7 @@ import re
 from array import array
 from bisect import bisect_left
 from dataclasses import dataclass, field
+from difflib import SequenceMatcher
 from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 MM_PER_INCH = 25.4
@@ -159,6 +160,54 @@ DEFAULT_COMMENT_RULES: List[Tuple[str, str]] = [
     (r"\bUnits\s*:\s*(INCH(?:ES)?|MM|MILLIMET(?:RE|ER)S?)\b", "program.units"),
     (r"\bTool\s+Coordinates\s*:\s*(Tip|Centre|Center)\b", "program.tool_point"),
 ]
+
+# Fallback for comments no rule matched: "(<label>[:=] <number>[unit])" whose
+# label is close to one of these aliases (see _label_note). Aliases shorter
+# than FUZZY_MIN_ALIAS characters must match exactly. No "Z MIN" style stock
+# labels: posts use those for toolpath extents, not the stock.
+DEFAULT_LABEL_ALIASES: Dict[str, List[str]] = {
+    "tool.diameter": ["diameter", "tool diameter", "cutter diameter", "tool dia", "cutter dia", "dia"],
+    "tool.corner_radius": ["corner radius", "tip radius", "corner rad"],
+    "tool.tip_angle": ["tip angle", "point angle"],
+    "tool.flute_length": ["flute length", "cutting length", "length of cut", "cut length", "loc"],
+    "tool.shank_diameter": ["shank diameter", "shank dia"],
+    "tool.stickout": ["stickout", "stick out", "tool stickout", "overhang"],
+    "tool.holder_diameter": ["tool holder diameter", "holder diameter", "tool holder dia", "holder dia"],
+    "tool.holder_length": ["tool holder length", "holder length"],
+    "stock.xmin": ["min x", "stock min x"],
+    "stock.ymin": ["min y", "stock min y"],
+    "stock.zmin": ["min z", "stock min z"],
+    "stock.xmax": ["max x", "stock max x"],
+    "stock.ymax": ["max y", "stock max y"],
+    "stock.zmax": ["max z", "stock max z"],
+}
+DEFAULT_FUZZ_THRESHOLD = 0.85
+FUZZY_MIN_ALIAS = 5
+
+_LABEL_NOTE = re.compile(r"^\s*([A-Za-z][A-Za-z _\-/.]*?)\s*[:=]?\s*" + NUM, re.I)
+_UNIT_SUFFIX = re.compile(r"\s*(mm|inches|inch|in|\")(?![A-Za-z0-9])", re.I)
+
+
+def normalize_label(label: str) -> str:
+    """Lower case, punctuation and runs of spaces folded to one space."""
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", label.lower()).split())
+
+
+def match_label(label: str, aliases: Dict[str, Sequence[str]], threshold: float) -> Optional[Tuple[str, str, float]]:
+    """(target, alias, similarity) of the alias closest to ``label``, if close enough."""
+    label = normalize_label(label)
+    best = None
+    for target, names in aliases.items():
+        for name in names:
+            name = normalize_label(name)
+            if len(name) < FUZZY_MIN_ALIAS:
+                score = 1.0 if label == name else 0.0
+            else:
+                score = SequenceMatcher(None, label, name).ratio()
+            if best is None or score > best[2]:
+                best = (target, name, score)
+    return best if best is not None and best[2] >= threshold else None
+
 
 # Macro variables that carry tool data (this shop's post: #127 holder length,
 # #128 tool stick-out below the holder).
@@ -425,6 +474,8 @@ class Interpreter:
         tool_radius: Optional[Callable[[int], Optional[float]]] = None,
         comment_rules: Optional[Sequence[Tuple[str, str]]] = None,
         variable_rules: Optional[Dict[int, str]] = None,
+        label_aliases: Optional[Dict[str, Sequence[str]]] = None,
+        fuzz_threshold: float = DEFAULT_FUZZ_THRESHOLD,
         stock_top: Optional[float] = None,
         option_units: Optional[str] = None,
     ) -> None:
@@ -447,6 +498,8 @@ class Interpreter:
         self.variable_rules = dict(
             DEFAULT_VARIABLE_RULES if variable_rules is None else variable_rules
         )
+        self.label_aliases = dict(DEFAULT_LABEL_ALIASES if label_aliases is None else label_aliases)
+        self.fuzz_threshold = fuzz_threshold
         self.stock_top = stock_top
         self.option_units = option_units
 
@@ -731,6 +784,7 @@ class Interpreter:
         if m:
             self._note(int(m.group(1)), "diameter", float(m.group(2)), li)
             return
+        matched = False
         for rx, target in self.rules:
             m = rx.search(text)
             if not m:
@@ -739,7 +793,41 @@ class Interpreter:
                 value = _note_value(target, m.group(1))
             except ValueError:
                 continue
+            if isinstance(value, float):
+                value = self._suffix_units(value, target, text, m.end(1))
             self._apply_note(target, value, li)
+            matched = True
+        if not matched and self.label_aliases:
+            self._label_note(text, li)
+
+    def _label_note(self, text: str, li: int) -> None:
+        """A "(label: value)" comment whose label is (close to) a known alias."""
+        m = _LABEL_NOTE.match(text)
+        if not m:
+            return
+        found = match_label(m.group(1), self.label_aliases, self.fuzz_threshold)
+        if found is None:
+            return
+        target, alias, score = found
+        value = self._suffix_units(float(m.group(2)), target, text, m.end(2))
+        if score < 1.0:
+            self.msg("info", "comment-label",
+                     f"Read '{m.group(1).strip()}' as {target} (closest to '{alias}', {score:.2f})", li)
+        self._apply_note(target, value, li)
+
+    def _suffix_units(self, value: float, target: str, text: str, end: int) -> float:
+        """A comment length followed by mm / in / " converted to the block units.
+
+        Before the program's units are known the value is kept as written,
+        like any other comment value."""
+        m = _UNIT_SUFFIX.match(text, end)
+        units = self.block_units or self.units or self.comment_units
+        if not m or units is None or target == "tool.tip_angle":
+            return value
+        written = "mm" if m.group(1).lower() == "mm" else "inch"
+        if written == units:
+            return value
+        return value / MM_PER_INCH if written == "mm" else value * MM_PER_INCH
 
     def _apply_note(self, target: str, value, li: int) -> None:
         scope, fld = target.split(".", 1)
