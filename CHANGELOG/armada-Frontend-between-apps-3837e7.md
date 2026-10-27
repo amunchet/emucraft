@@ -32,3 +32,8 @@ each other.
 Merged `master` (the laser render API, #10). Master moved the laser presets out of `laser/src/main.js`, so the switcher block
 now sits beside master's version of that file. Master also added `laser/vite.config.js`, so the relative build base moved
 into it, where it covers the new customer viewer page too.
+
+## 2026-10-27 02:24 CDT
+Fixed the failing CI test `tests/moonshot/test_web.py::test_page_is_served`. It checked for the old root-relative
+`/moonshot.js` on Moonshot's page. It now asserts the relative `src="moonshot.js"` and `'./js/viewer.js'` that serving
+under `/moonshot/` depends on, so a regression back to root-relative URLs fails the test.
