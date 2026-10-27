@@ -101,17 +101,16 @@ export function downloadText(name, text) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-// Emucraft's web apps, each served at the root of a subdomain named after it (moonshot.example.com) or, locally, on its
-// default port. laser/src/main.js keeps a copy of this list, since the laser simulator is built on its own.
-const APPS = [['emucraft', 'Emucraft', 8765], ['moonshot', 'Moonshot', 8766], ['laser', 'Laser Simulator', 5173]];
+// Emucraft's web apps, each served under its own path on one host (example.com/moonshot/) or, locally, at the root of
+// its default port. laser/src/main.js keeps a copy of this list, since the laser simulator is built on its own.
+const APPS = [['emucraft', 'Emucraft', 8765], ['moonshot', 'Moonshot', 8766], ['laser-simulator', 'Laser Simulator', 5173]];
 
 // Turns an app's brand into a menu that switches to the other apps.
 export function appSwitcher(brand, current) {
-  const [first, ...rest] = location.hostname.split('.');
-  const local = !APPS.some(([name]) => name === first);
-  const menu = el('nav', { class: 'app-menu', hidden: true }, APPS.map(([name, label, port]) => el('a', {
-    href: `${location.protocol}//${local ? `${location.hostname}:${port}` : [name, ...rest].join('.')}/`,
-    'aria-current': name === current && 'page',
+  const local = !APPS.some(([path]) => path === location.pathname.split('/')[1]);
+  const menu = el('nav', { class: 'app-menu', hidden: true }, APPS.map(([path, label, port]) => el('a', {
+    href: local ? `${location.protocol}//${location.hostname}:${port}/` : `/${path}/`,
+    'aria-current': path === current && 'page',
   }, label)));
   const toggle = open => { menu.hidden = !open; brand.setAttribute('aria-expanded', open); };
   brand.classList.add('app-switch');

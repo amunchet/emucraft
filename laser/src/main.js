@@ -15,17 +15,16 @@ const $ = (id) => document.getElementById(id);
 // Turns the title into a menu that switches to the other Emucraft apps; a copy of appSwitcher in
 // emucraft/web/js/util.js, which this separately built app can't import.
 {
-  const APPS = [['emucraft', 'Emucraft', 8765], ['moonshot', 'Moonshot', 8766], ['laser', 'Laser Simulator', 5173]];
+  const APPS = [['emucraft', 'Emucraft', 8765], ['moonshot', 'Moonshot', 8766], ['laser-simulator', 'Laser Simulator', 5173]];
   const brand = document.querySelector('h1');
-  const [first, ...rest] = location.hostname.split('.');
-  const local = !APPS.some(([name]) => name === first);
+  const local = !APPS.some(([path]) => path === location.pathname.split('/')[1]);
   const menu = document.createElement('nav');
   menu.className = 'app-menu';
-  for (const [name, label, port] of APPS) {
+  for (const [path, label, port] of APPS) {
     const a = menu.appendChild(document.createElement('a'));
-    a.href = `${location.protocol}//${local ? `${location.hostname}:${port}` : [name, ...rest].join('.')}/`;
+    a.href = local ? `${location.protocol}//${location.hostname}:${port}/` : `/${path}/`;
     a.textContent = label;
-    if (name === 'laser') a.setAttribute('aria-current', 'page');
+    if (path === 'laser-simulator') a.setAttribute('aria-current', 'page');
   }
   const toggle = (open) => { menu.hidden = !open; brand.setAttribute('aria-expanded', open); };
   brand.classList.add('app-switch');

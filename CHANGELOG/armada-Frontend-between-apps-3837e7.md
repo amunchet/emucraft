@@ -14,3 +14,16 @@ the three apps. The links come from the current host name: on a deployed host th
 The menu is frontend only. Emucraft and Moonshot share it through `emucraft/web/js/util.js`, and the separately built
 laser app has a small copy. The menu is left out of Emucraft's standalone HTML report, and it is set up before the 3D
 view, so it still works when WebGL fails.
+
+## 2026-10-27 01:54 CDT
+All three apps now run on one host under path prefixes (`/emucraft/`, `/moonshot/`, `/laser-simulator/`) instead of separate
+subdomains, and the app switcher links by path. Every URL the pages use is now relative:
+- Emucraft's `/api` calls.
+- Moonshot's stylesheets, scripts, import map and API calls, plus the root-relative file links its server returns, which are
+  rewritten on the page.
+- The laser build, which now uses `--base=./`.
+
+This is still frontend only. The README's Caddy example uses `handle_path` to strip each prefix, plus a `redir` that adds the
+trailing slash the relative URLs need. Run locally, each app is still served at the root of its own port, and the switcher
+links to those ports. Tested behind a prefix-stripping proxy: all three pages load with no failed requests and switch to
+each other.
