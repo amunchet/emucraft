@@ -66,3 +66,9 @@ Closed three more size leaks in the customer GLB that an adversarial hunt found 
 
 ## 2026-10-26 19:03 CDT
 Regression tests for the depth and default-placement leaks. One checks that the normal map's slopes scale with the jitter. The other is an HTTP test showing that the default pixel pitch matches the jitter shown by the wall tile period; it measures two stripes centre to centre, so the burn's spread cancels out. Both tests fail if their fix is reverted.
+
+## 2026-10-26 22:45 CDT
+The customer GLB is now a faithful render of a stand-in part. The stand-in is the real part and placement scaled by the per-part HMAC factor in [0.9, 1.1], and it replaces the separate jitters inside `relief.js`.
+- **Why:** a second adversarial pass showed that the laser itself was still a ruler. The spot blur (0.05 mm), defocus over the part's height, and `max_depth_mm` all stayed in real mm while the rest of the file was jittered, which gave the size to within 0.01–2.6 %. Now every channel measures the stand-in, so the real size is known only to within ±10 %.
+- **Behaviour change:** a job without `width_mm` or `height_mm` puts 1 px = 1 spot on the stand-in, so the design's size relative to the part varies by up to ±10 %.
+- **Tests:** the API's GLB is byte-for-byte identical to engraving the scaled part and placement directly. The default pixel grid and the tile period both measure the stand-in. Both tests fail if the scaling is removed.

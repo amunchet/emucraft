@@ -10,13 +10,8 @@ const lin_to_srgb = (c) => (c <= 0.0031308 ? c * 12.92 : 1.055 * c ** (1 / 2.4) 
 // look: { color, mark: linear [r, g, b]; rough, metal, mark_rough, mark_metal, mark_full, clearcoat, clearcoat_rough;
 //   tile: { px: RGBA bytes, w, h } | null, tile_mm, laminate (tile coords (x + y, z) instead of (x, y)), rough_tile }
 // res: simulate() output; encode_png(rgba, w, h) -> Uint8Array (may be async). Returns the GLB bytes and a summary.
-// jitter scales every length the file is built from in mm (mesh pitch, texel floor, tile size): a unit-less file
-// would otherwise give the real size away as (known mm length) / (its length in the file). One factor for all of
-// them, so they cannot be played off against each other; the size is then known only to within the jitter.
-export async function customer_glb({ positions, res, placement: P, look, mesh_mm = 0.5, max_texture = 2048, true_scale = false, jitter = 1 }, encode_png) {
+export async function customer_glb({ positions, res, placement: P, look, mesh_mm = 0.5, max_texture = 2048, true_scale = false }, encode_png) {
   if (!(mesh_mm > 0)) throw new Error('mesh_mm must be positive');
-  if (!(jitter > 0)) throw new Error('jitter must be positive');
-  const tile_mm = (look.tile_mm || 1) * jitter;
   let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, top = -Infinity;
   for (let k = 0; k < positions.length; k += 3) {
     x0 = Math.min(x0, positions[k]); x1 = Math.max(x1, positions[k]);
@@ -25,7 +20,7 @@ export async function customer_glb({ positions, res, placement: P, look, mesh_mm
   }
   // texel pitch: the whole part in max_texture texels (+ a 1-texel empty margin), whatever the engraving grid's pitch
   const { grid_w: gw, grid_h: gh, depth } = res, pw = P.width_mm / gw, ph = P.height_mm / gh;
-  const t = Math.max(0.005 * jitter, (x1 - x0) / (max_texture - 2), (y1 - y0) / (max_texture - 2));
+  const t = Math.max(0.005, (x1 - x0) / (max_texture - 2), (y1 - y0) / (max_texture - 2));
   const tw = Math.ceil((x1 - x0) / t) + 2, th = Math.ceil((y1 - y0) / t) + 2;
   const left = (x0 + x1) / 2 - (tw * t) / 2, upper = (y0 + y1) / 2 + (th * t) / 2; // texel (i, j) centre: left + (i + .5) t, upper - (j + .5) t
   const base = rasterize_surface(positions, { cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, angle: 0, width_mm: tw * t, height_mm: th * t }, tw, th);
@@ -52,22 +47,20 @@ export async function customer_glb({ positions, res, placement: P, look, mesh_mm
       cnt[j * tw + i]++;
     }
   }
-  // z is the engraved surface as the file shows it (normal map, laminate bands): its depth is scaled by the jitter
-  // like every other length, else depth from the marks (real mm via mark_full) over depth from the normals is a ruler
   const dep = new Float32Array(n), z = new Float32Array(n).fill(NaN);
   for (let j = 0; j < th; j++) {
     for (let i = 0; i < tw; i++) {
       const k = j * tw + i;
       if (!ok(k)) continue;
       dep[k] = scatter && cnt[k] ? acc[k] / cnt[k] : depth_at(left + (i + 0.5) * t, upper - (j + 0.5) * t);
-      z[k] = base[k] - jitter * dep[k];
+      z[k] = base[k] - dep[k];
     }
   }
 
   // coarse vertex grid over the texture area; a cell is kept if a surface texel lies within one texel of it, so the
   // alpha edge (half a texel outside the last surface texel) always falls on kept cells
   // (never finer than 2 texels, nor than 1024 cells across: the shell must stay coarse and bounded)
-  const m = Math.max(mesh_mm * jitter, 2 * t, (tw * t) / 1024, (th * t) / 1024), mw = Math.ceil((tw * t) / m) + 1, mh = Math.ceil((th * t) / m) + 1;
+  const m = Math.max(mesh_mm, 2 * t, (tw * t) / 1024, (th * t) / 1024), mw = Math.ceil((tw * t) / m) + 1, mh = Math.ceil((th * t) / m) + 1;
   const kept = new Uint8Array((mw - 1) * (mh - 1));
   for (let j = 0; j < th; j++) {
     for (let i = 0; i < tw; i++) {
@@ -139,7 +132,7 @@ export async function customer_glb({ positions, res, placement: P, look, mesh_mm
   const tile = look.tile;
   // bilinear, wrapping tile lookup at mm coords (u, v), channel ch, 0..1; v runs up the tile as in the app (flipY)
   const tile_at = (u, v, ch) => {
-    const fu = (((u / tile_mm) % 1) + 1) % 1 * tile.w - 0.5, fv = (1 - ((((v / tile_mm) % 1) + 1) % 1)) * tile.h - 0.5;
+    const fu = (((u / look.tile_mm) % 1) + 1) % 1 * tile.w - 0.5, fv = (1 - ((((v / look.tile_mm) % 1) + 1) % 1)) * tile.h - 0.5;
     const a = Math.floor(fu), b = Math.floor(fv), wa = fu - a, wb = fv - b;
     const px = (q, r) => tile.px[(((r + tile.h) % tile.h) * tile.w + ((q + tile.w) % tile.w)) * 4 + ch] / 255;
     return (px(a, b) * (1 - wa) + px(a + 1, b) * wa) * (1 - wb) + (px(a, b + 1) * (1 - wa) + px(a + 1, b + 1) * wa) * wb;
@@ -252,6 +245,7 @@ export async function customer_glb({ positions, res, placement: P, look, mesh_mm
     if (loop.length >= 3) loops.push(simplify_loop(loop, t * 0.3));
   }
   const wpos = [], wnor = [], wuv = [], widx = [];
+  const tile_mm = look.tile_mm || 1;
   for (const loop of loops) {
     const L = loop.length, segn = loop.map((p, a) => {
       const q = loop[(a + 1) % L], dx = q[0] - p[0], dy = q[1] - p[1], len = Math.hypot(dx, dy);

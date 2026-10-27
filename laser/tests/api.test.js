@@ -5,7 +5,8 @@ import validator from 'gltf-validator';
 import { DEFAULT_LASER, simulate } from '../src/sim.js';
 import { PRESETS, procedural_pixels, triangle_soup, centre_model } from '../src/part.js';
 import { customer_glb } from '../src/relief.js';
-import { make_server } from '../server.mjs';
+import { make_server, size_jitter } from '../server.mjs';
+import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 
 // 30 x 20 x 4 mm plate with a 3 mm through hole, as a centred triangle soup
 const plate = () => {
@@ -107,31 +108,6 @@ describe('customer GLB', () => {
     expect(col.data[(hy * col.width + hx) * 4 + 3]).toBe(0);
   });
 
-  it('scales every mm length by the jitter, so the file gives the size only to within it', async () => {
-    const { json, floats } = parse((await customer_glb({ positions, res, placement, look, mesh_mm: 1, max_texture: 512, jitter: 1.07 }, png)).glb);
-    const [relief, wall] = json.meshes[0].primitives, k_s = 1 / 30; // plate: longest side 30 mm
-    // relief grid pitch: (1 mm x 1.07) in file units, not 1 mm
-    const xs = [...new Set(floats(relief.attributes.POSITION).filter((_, k) => k % 3 === 0))];
-    const pairs = (d) => xs.reduce((n, x) => n + xs.filter((y) => Math.abs(y - x - d) < 2e-5).length, 0);
-    expect(pairs(1.07 * k_s)).toBeGreaterThan(20);
-    expect(pairs(1.07 * k_s)).toBeGreaterThan(5 * pairs(k_s));
-    // wall texture period: (80 mm x 1.07)
-    expect(wall_tile_mm(json, floats) / 1.07).toBeCloseTo(80 * k_s, 4);
-  });
-
-  it('shows the engraving depth scaled by the jitter, like every other length', async () => {
-    // the plate is flat, so the tangent-space normal's x / z is the slope along u; the real depth is in the marks
-    const slopes = async (jitter) => {
-      const { glb } = await customer_glb({ positions, res, placement, look, mesh_mm: 1, max_texture: 512, jitter }, png);
-      const nrm = texture(glb, parse(glb).json, 'nrm');
-      return Array.from({ length: nrm.width * nrm.height }, (_, k) => (nrm.data[k * 4] / 255 - 0.5) / (nrm.data[k * 4 + 2] / 255 - 0.5));
-    };
-    const [a, b] = [await slopes(1), await slopes(1.1)];
-    const ratios = a.map((v, k) => b[k] / v).filter((_, k) => Math.abs(a[k]) > 0.5).sort((p, q) => p - q);
-    expect(ratios.length).toBeGreaterThan(20);
-    expect(ratios[ratios.length >> 1]).toBeCloseTo(1.1, 1);
-  });
-
   it('true_scale keeps metres', async () => {
     const { glb } = await customer_glb({ positions, res, placement, look, mesh_mm: 1, max_texture: 512, true_scale: true }, png);
     const { json } = parse(glb), acc = json.accessors[json.meshes[0].primitives[0].attributes.POSITION];
@@ -218,7 +194,7 @@ describe('HTTP API', () => {
       const r = await fetch(`http://127.0.0.1:${srv.address().port}/api/laser/render`, { method: 'POST', body: JSON.stringify(job()) });
       expect(r.status).toBe(200);
       const { json, floats } = parse(new Uint8Array(await r.arrayBuffer()));
-      return wall_tile_mm(json, floats) * 30; // plate: longest side 30 mm -> tile period in mm as the file implies it
+      return 80 / wall_tile_mm(json, floats); // the stand-in's longest side, as the 80 mm tile period implies it
     };
     const a = make_server({ secret: 'one' }), b = make_server({ secret: 'two' });
     await Promise.all([a, b].map((srv) => new Promise((r) => srv.listen(0, '127.0.0.1', r))));
@@ -226,13 +202,13 @@ describe('HTTP API', () => {
     a.close();
     b.close();
     expect(a1).toBeCloseTo(a2, 6);
-    for (const v of [a1, b1]) { expect(v).toBeGreaterThanOrEqual(72); expect(v).toBeLessThanOrEqual(88); }
+    for (const v of [a1, b1]) { expect(v).toBeGreaterThanOrEqual(27); expect(v).toBeLessThanOrEqual(33); } // 30 mm ± 10 %
     expect(Math.abs(a1 - b1)).toBeGreaterThan(1e-3);
   }, 120000);
 
-  it('jitters the default placement, so the bitmap pixel grid is no ruler', async () => {
-    // no width or height: 1 px = 1 spot (0.05 mm) x jitter. Two stripes 30 px apart must then be 1.5 mm x jitter apart
-    // in the file's scale, the same factor the wall tile period shows (centre to centre, so the burn's spread cancels)
+  it('sets the default placement on the stand-in, so the bitmap pixel grid is no ruler for the real part', async () => {
+    // no width or height: 1 px = 1 spot (0.05 mm) on the stand-in. Two stripes 30 px apart must measure 1.5 mm against
+    // the stand-in's size as the tile period shows it (centre to centre, so the burn's spread cancels)
     const stripes = new Uint8Array(60 * 40 * 4).map((_, k) => (k % 4 === 3 ? 255 : [13, 14, 15, 16, 17, 43, 44, 45, 46, 47].includes((k >> 2) % 60) ? 0 : 255));
     const srv = make_server({ secret: 'one' });
     await new Promise((r) => srv.listen(0, '127.0.0.1', r));
@@ -241,8 +217,8 @@ describe('HTTP API', () => {
     srv.close();
     expect(r.status).toBe(200);
     const glb = new Uint8Array(await r.arrayBuffer()), { json, floats } = parse(glb), relief = json.meshes[0].primitives[0];
-    const jitter = (wall_tile_mm(json, floats) * 30) / 80;
-    expect(Math.abs(jitter - 1)).toBeGreaterThan(0.02); // the secret gives a factor that tells the two apart
+    const size = 80 / wall_tile_mm(json, floats); // the stand-in's longest side in mm
+    expect(Math.abs(size / 30 - 1)).toBeGreaterThan(0.02); // the secret gives a factor that tells real and stand-in apart
     const pos = floats(relief.attributes.POSITION), uv = floats(relief.attributes.TEXCOORD_0), orm = texture(glb, json, 'orm');
     // file units per texel: relief u runs across the texture as x does across the file
     const span = (arr, n, o) => { let lo = Infinity, hi = -Infinity; for (let k = o; k < arr.length; k += n) { lo = Math.min(lo, arr[k]); hi = Math.max(hi, arr[k]); } return hi - lo; };
@@ -252,11 +228,35 @@ describe('HTTP API', () => {
       let w = 0, x = 0;
       for (let i = 0; i < orm.width; i++) {
         const d = (i + 0.5 - mid) * side;
-        if (d > 0 && d * texel < 2.5 / 30) { const m = 255 - orm.data[(row * orm.width + i) * 4]; w += m; x += m * (i + 0.5); }
+        if (d > 0 && d * texel * size < 2.5) { const m = 255 - orm.data[(row * orm.width + i) * 4]; w += m; x += m * (i + 0.5); }
       }
       return x / w;
     };
-    expect(((centre(1) - centre(-1)) * texel * 30) / 1.5).toBeCloseTo(jitter, 2);
+    expect((centre(1) - centre(-1)) * texel * size).toBeCloseTo(1.5, 2);
+  }, 120000);
+
+  it('renders the stand-in faithfully: the same file as engraving the scaled part and placement directly', async () => {
+    const srv = make_server({ secret: 'one' });
+    await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+    const r = await fetch(`http://127.0.0.1:${srv.address().port}/api/laser/render`, { method: 'POST', body: JSON.stringify(job()) });
+    srv.close();
+    expect(r.status).toBe(200);
+    const got = new Uint8Array(await r.arrayBuffer());
+    // the stand-in, built as render() reads the job: the real part and placement scaled by the factor, the same laser
+    const real = triangle_soup(new THREE.Mesh(new STLLoader().parse(new Uint8Array(stl(plate())).buffer)));
+    centre_model(real, 'model');
+    const f = size_jitter('one', real), stand_in = real.map((v) => v * f);
+    expect(Math.abs(f - 1)).toBeGreaterThan(0.02);
+    const grey = Float32Array.from({ length: 60 * 40 }, (_, k) => 0.299 * rgba[k * 4] + 0.587 * rgba[k * 4 + 1] + 0.114 * rgba[k * 4 + 2]);
+    const placement = { cx: 0, cy: 0, angle: (10 * Math.PI) / 180, width_mm: 24 * f, height_mm: (24 * f * 40) / 60 };
+    const res = simulate({ positions: stand_in, grey, img_w: 60, img_h: 40, placement, laser: { ...DEFAULT_LASER }, supersample: 2 });
+    const p = PRESETS.anodized_black, lin = (hex) => new THREE.Color(hex).toArray();
+    const look = {
+      color: lin(p.color), mark: lin(p.mark), rough: p.rough, metal: p.metal, mark_rough: p.mark_rough, mark_metal: p.mark_metal,
+      mark_full: p.mark_full, clearcoat: 0, clearcoat_rough: 0.03, tile: null, tile_mm: 80, laminate: false, rough_tile: false,
+    };
+    const { glb: want } = await customer_glb({ positions: stand_in, res, placement, look, mesh_mm: 1, max_texture: 512 }, png);
+    expect(Buffer.compare(Buffer.from(got), Buffer.from(want))).toBe(0);
   }, 120000);
 
   it('checks the bearer token when one is set', async () => {
