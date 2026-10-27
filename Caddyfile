@@ -1,0 +1,118 @@
+# Production Caddyfile, kept here for reference. It runs in the caddy-auth0 project's Caddy stack, so "the README" and
+# the `admin` service in docker-compose.yml below are caddy-auth0's, not this repository's.
+{
+    email {$ACME_EMAIL}
+
+    # Certificates via the Cloudflare DNS challenge: works behind Cloudflare's
+    # proxy, for internal-only hosts, and for wildcard certificates.
+    acme_dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+
+    # The Auth0 tenant shared by every site below. {env.*} values are read
+    # when Caddy starts, so secrets never end up in Caddy's saved config.
+    auth0 {
+        domain {env.AUTH0_DOMAIN}
+        client_id {env.AUTH0_CLIENT_ID}
+        client_secret {env.AUTH0_CLIENT_SECRET}
+        audience {env.AUTH0_AUDIENCE}
+        connection {env.AUTH0_CONNECTION}
+        cookie_secret {env.AUTH0_COOKIE_SECRET}
+
+        # Lets the MCP server also accept tokens minted with
+        # `caddy mcp-token mint`, instead of Auth0 tokens. Unset in .env
+        # means off. See "Local tokens" in the README.
+        token_secret {env.MCP_TOKEN_SECRET}
+
+        # For callers using bearer tokens (MCP clients, scripts): read the
+        # email from a custom access-token claim added by an Auth0 Action.
+        # See "MCP servers" in the README.
+        # email_claim https://example.com/email
+    }
+}
+
+# The MCP token admin page (the `admin` service in docker-compose.yml). Add
+# `import mcp_admin` to any site to serve it at /admin on that site, for users
+# with {$ADMIN_PERMISSION} (default: admin).
+(mcp_admin) {
+    @mcp_admin path /admin /admin/*
+    auth0 @mcp_admin {
+        require {$ADMIN_PERMISSION:admin}
+    }
+    redir /admin /admin/
+    handle_path /admin/* {
+        reverse_proxy admin:8000
+    }
+}
+
+# Emucraft (github.com/amunchet/emucraft) on one host. Its docker-compose.yml
+# runs every service on the external `emucraft` network, which Caddy must
+# join too.
+#
+#   /emucraft/         G-code viewer             emucraft:8000
+#   /moonshot/         Moonshot's web page       moonshot:8000
+#   /laser-simulator/  laser engraving simulator laser:80
+#   /moonshot-mcp/mcp  Moonshot's MCP server     moonshot-mcp:8000
+#
+# The app paths are fixed by the app switcher (APPS in emucraft's
+# emucraft/web/js/util.js and laser/src/main.js). The pages use relative URLs,
+# so each prefix is stripped with handle_path and needs its trailing slash.
+emu.north.altamontco.com {
+    # Everything except the MCP server is a browser app: signed-in users with
+    # {$ACCESS_PERMISSION}. The MCP paths are left out, or this would send MCP
+    # clients to the login page.
+    @apps not path /moonshot-mcp /moonshot-mcp/* /.well-known/oauth-protected-resource/*
+    encode @apps zstd gzip
+    auth0 @apps {
+        require {$ACCESS_PERMISSION:read}
+    }
+
+    # Writes need an extra permission. MCP requests are all POSTs, so they're
+    # left out here too; the MCP server has its own permission below. So is
+    # the admin page, which has its own.
+    @writes {
+        method POST PUT PATCH DELETE
+        not path /moonshot-mcp /moonshot-mcp/* /admin /admin/*
+    }
+    auth0 @writes {
+        require {$WRITE_PERMISSION:write}
+    }
+
+    # Moonshot's MCP server, for LibreChat and other MCP clients: bearer
+    # tokens only, with the OAuth discovery metadata MCP clients expect.
+    #   Endpoint:  https://emu.north.altamontco.com/moonshot-mcp/mcp
+    #   Resource:  https://emu.north.altamontco.com/moonshot-mcp
+    #   Metadata:  /.well-known/oauth-protected-resource/moonshot-mcp
+    # Caddy removes the bearer token before proxying, so leave MOONSHOT_TOKEN
+    # unset on the moonshot-mcp container (Caddy is its guard), and set
+    # MOONSHOT_URL=https://emu.north.altamontco.com/moonshot-mcp for the
+    # download links list_files returns.
+    auth0 /moonshot-mcp/* {
+        mcp
+        require mcp:tools
+    }
+
+    # MCP token admin page at /admin.
+    import mcp_admin
+
+    redir / /emucraft/
+    redir /emucraft /emucraft/
+    redir /moonshot /moonshot/
+    redir /laser-simulator /laser-simulator/
+
+    handle_path /emucraft/* {
+        reverse_proxy emucraft:8000
+    }
+    handle_path /moonshot/* {
+        reverse_proxy moonshot:8000
+    }
+    handle_path /laser-simulator/* {
+        reverse_proxy laser:80
+    }
+    # No `encode` on this path (see @apps): MCP responses are event streams.
+    handle_path /moonshot-mcp/* {
+        reverse_proxy moonshot-mcp:8000
+    }
+
+    handle {
+        respond "Not found" 404
+    }
+}

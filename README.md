@@ -343,6 +343,8 @@ example.com {
 }
 ```
 
+The production config is in [`Caddyfile`](Caddyfile), kept for reference. It adds Auth0 sign-in and write permissions (via caddy-auth0), Moonshot's MCP server at `/moonshot-mcp/mcp`, an `/admin` page, and a redirect from `/` to `/emucraft/`.
+
 `handle_path` strips the prefix, so each app still sees itself at `/`. The pages use only relative URLs, so they work under any prefix, but they need the trailing slash, which is why each path has a `redir`. Clicking an app's name in its top bar switches to the others at `/emucraft/`, `/moonshot/` and `/laser-simulator/`. These paths are fixed in `APPS` in `emucraft/web/js/util.js` and its copy in `laser/src/main.js`. Anywhere else, such as running locally, it links to each app's default port on the same host instead (8765, 8766, and the laser simulator's dev server on 5173). Moonshot's MCP server checks `MOONSHOT_TOKEN` itself (set `MOONSHOT_URL` to its public address for download links); see [moonshot/README.md](moonshot/README.md#mcp-server).
 
 The viewer lists the bundled `examples/` plus anything in `/programs` inside the container; uncomment the volume in `docker-compose.yml` to mount your own folder (an `emucraft.toml` there is picked up as the default config).

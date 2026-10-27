@@ -37,3 +37,9 @@ into it, where it covers the new customer viewer page too.
 Fixed the failing CI test `tests/moonshot/test_web.py::test_page_is_served`. It checked for the old root-relative
 `/moonshot.js` on Moonshot's page. It now asserts the relative `src="moonshot.js"` and `'./js/viewer.js'` that serving
 under `/moonshot/` depends on, so a regression back to root-relative URLs fails the test.
+
+## 2026-10-27 02:59 CDT
+Added the production `Caddyfile` (emu.north.altamontco.com, behind caddy-auth0) at the repository root for reference, and
+linked it from the README's Web Deployment section. It covers the same three app paths plus Auth0 sign-in and write
+permissions, Moonshot's MCP server at `/moonshot-mcp/mcp`, the `/admin` token page, and `redir / /emucraft/`. A header
+comment notes that its "README" and `admin` service references are caddy-auth0's. Docs only; nothing in the apps changed.
