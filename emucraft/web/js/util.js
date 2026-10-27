@@ -100,3 +100,30 @@ export function downloadText(name, text) {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+// Emucraft's web apps, each served under its own path on one host (example.com/moonshot/) or, locally, at the root of
+// its default port. laser/src/main.js keeps a copy of this list, since the laser simulator is built on its own.
+const APPS = [['emucraft', 'Emucraft', 8765], ['moonshot', 'Moonshot', 8766], ['laser-simulator', 'Laser Simulator', 5173]];
+
+// Turns an app's brand into a menu that switches to the other apps.
+export function appSwitcher(brand, current) {
+  const local = !APPS.some(([path]) => path === location.pathname.split('/')[1]);
+  const menu = el('nav', { class: 'app-menu', hidden: true }, APPS.map(([path, label, port]) => el('a', {
+    href: local ? `${location.protocol}//${location.hostname}:${port}/` : `/${path}/`,
+    'aria-current': path === current && 'page',
+  }, label)));
+  const toggle = open => { menu.hidden = !open; brand.setAttribute('aria-expanded', open); };
+  brand.classList.add('app-switch');
+  Object.assign(brand, { tabIndex: 0, title: 'Switch app' });
+  brand.setAttribute('role', 'button');
+  brand.setAttribute('aria-haspopup', 'true');
+  brand.append(el('span', { class: 'caret' }), menu);
+  toggle(false);
+  brand.addEventListener('click', e => { if (!menu.contains(e.target)) toggle(menu.hidden); });
+  brand.addEventListener('keydown', e => {
+    if (e.target !== brand) return;
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(menu.hidden); }
+    if (e.key === 'Escape') toggle(false);
+  });
+  document.addEventListener('click', e => { if (!brand.contains(e.target)) toggle(false); });
+}

@@ -1,10 +1,11 @@
 // Moonshot's page: models, runs and their queued tasks through /api, and a planned part in 3D with the drum at
 // any point and the robot program played back. The 3D viewer and helpers are the G-code viewer's (/js/).
 import * as THREE from 'three';
-import { el, fmtClock, hexToRgb, ramp, rampCss, toolColor, typed } from '/js/util.js';
-import { Viewer } from '/js/viewer.js';
+import { appSwitcher, el, fmtClock, hexToRgb, ramp, rampCss, toolColor, typed } from './js/util.js';
+import { Viewer } from './js/viewer.js';
 
 const $ = id => document.getElementById(id);
+appSwitcher(document.querySelector('.brand'), 'moonshot');
 const PART = 0xb8b5ac, HOLDER = 0x77746d, DRUM = 0x2a78d6;
 const BLOCKED_PART = [0.86, 0.26, 0.26], BLOCKED_HOLDER = [0.42, 0.42, 0.42], NONE = [0.5, 0.5, 0.5];
 
@@ -12,7 +13,7 @@ async function api(path, { method = 'GET', body, raw } = {}) {
   const init = { method };
   if (raw !== undefined) init.body = raw;
   else if (body !== undefined) Object.assign(init, { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-  const resp = await fetch(`/api${path}`, init);
+  const resp = await fetch(`api${path}`, init);
   const data = await resp.json().catch(() => ({ error: `HTTP ${resp.status}` }));
   if (!resp.ok || data.error) throw new Error(data.error || `HTTP ${resp.status}`);
   return data;
@@ -370,7 +371,8 @@ class App {
     const root = $('tab-files');
     root.textContent = '';
     if (!this.run) return;
-    const files = await api(`/runs/${this.run.run_id}/files`).catch(() => []);
+    // The server's file links are root-relative; drop the leading slash so they work under a path prefix (/moonshot/)
+    const files = (await api(`/runs/${this.run.run_id}/files`).catch(() => [])).map(f => ({ ...f, url: f.url.slice(1) }));
     const images = files.filter(f => /\.(png|gif)$/.test(f.path));
     for (const f of images) {
       root.append(el('a', { href: f.url, target: '_blank', class: 'ms-thumb', title: f.path }, el('img', { src: f.url, alt: f.path, loading: 'lazy' }), el('span', {}, f.path)));

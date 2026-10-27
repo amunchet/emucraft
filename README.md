@@ -323,23 +323,27 @@ docker compose up -d --build                                            # emucra
 MOONSHOT_TOKEN=... docker compose --profile moonshot-mcp up -d --build  # also Moonshot's MCP server
 ```
 
-Then, in the Caddy stack (attached to the same network):
+Then, in the Caddy stack (attached to the same network), serve all three on one host, each under its own path:
 
 ```
-emucraft.example.com {
+example.com {
     # ...your auth...
-    reverse_proxy emucraft:8000
-}
-moonshot.example.com {
-    # ...your auth...
-    reverse_proxy moonshot:8000
-}
-laser.example.com {
-    reverse_proxy laser:80
+    redir /emucraft /emucraft/
+    redir /moonshot /moonshot/
+    redir /laser-simulator /laser-simulator/
+    handle_path /emucraft/* {
+        reverse_proxy emucraft:8000
+    }
+    handle_path /moonshot/* {
+        reverse_proxy moonshot:8000
+    }
+    handle_path /laser-simulator/* {
+        reverse_proxy laser:80
+    }
 }
 ```
 
-Serve each at the root of a (sub)domain: the viewer and Moonshot's page call `/api/...` with absolute paths, so a path prefix won't work. Moonshot's MCP server checks `MOONSHOT_TOKEN` itself (set `MOONSHOT_URL` to its public address for download links); see [moonshot/README.md](moonshot/README.md#mcp-server).
+`handle_path` strips the prefix, so each app still sees itself at `/`. The pages use only relative URLs, so they work under any prefix, but they need the trailing slash, which is why each path has a `redir`. Clicking an app's name in its top bar switches to the others at `/emucraft/`, `/moonshot/` and `/laser-simulator/`. These paths are fixed in `APPS` in `emucraft/web/js/util.js` and its copy in `laser/src/main.js`. Anywhere else, such as running locally, it links to each app's default port on the same host instead (8765, 8766, and the laser simulator's dev server on 5173). Moonshot's MCP server checks `MOONSHOT_TOKEN` itself (set `MOONSHOT_URL` to its public address for download links); see [moonshot/README.md](moonshot/README.md#mcp-server).
 
 The viewer lists the bundled `examples/` plus anything in `/programs` inside the container; uncomment the volume in `docker-compose.yml` to mount your own folder (an `emucraft.toml` there is picked up as the default config).
 

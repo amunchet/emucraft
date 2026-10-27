@@ -68,6 +68,16 @@ button, select, input { font: inherit; color: inherit; }
 .brand { display: flex; align-items: center; gap: 8px; font-weight: 650; letter-spacing: .2px; font-size: 15px; }
 .brand svg { width: 22px; height: 22px; fill: var(--accent); }
 .brand svg .shade { fill: color-mix(in srgb, var(--accent) 55%, #000); }
+.app-switch { position: relative; cursor: pointer; border-radius: 6px; padding: 2px 6px; margin: -2px -6px; user-select: none; }
+.app-switch:hover, .app-switch[aria-expanded="true"] { background: var(--raised); }
+.app-switch .caret { display: inline-block; width: 6px; height: 6px; border: solid var(--muted); border-width: 0 1.5px 1.5px 0; transform: translateY(-2px) rotate(45deg); }
+.app-menu {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 50; min-width: 170px; display: flex; flex-direction: column;
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 4px;
+}
+.app-menu a { color: var(--text); text-decoration: none; font-weight: 500; padding: 6px 10px; border-radius: 5px; }
+.app-menu a:hover { background: var(--raised); }
+.app-menu a[aria-current] { color: var(--accent); }
 .file-controls { display: flex; gap: 6px; align-items: center; }
 .file-name { font-family: var(--mono); font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 

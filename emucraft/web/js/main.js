@@ -8,11 +8,12 @@ import { StockView } from './stock.js';
 import { Timeline } from './timeline.js';
 import { buildTool, disposeTool } from './toolmodel.js';
 import { ToolpathView } from './toolpath.js';
-import { debounce, downloadText, el, fmtClock, fmtLen, hexToRgb, inflateTyped, rampCss, splitLines, toolColor, typed } from './util.js';
+import { appSwitcher, debounce, downloadText, el, fmtClock, fmtLen, hexToRgb, inflateTyped, rampCss, splitLines, toolColor, typed } from './util.js';
 import { Viewer } from './viewer.js';
 
 const $ = id => document.getElementById(id);
 const EMBED = window.EMUCRAFT_EMBED || null;
+if (!EMBED) appSwitcher(document.querySelector('.brand'), 'emucraft');
 
 async function api(path, body) {
   const resp = await fetch(path, body === undefined ? {} : {
@@ -55,7 +56,7 @@ class App {
       this.onAnalysis(EMBED.payload, false, initial);
       return;
     }
-    const [info, programs] = await Promise.all([api('/api/info'), api('/api/programs')]);
+    const [info, programs] = await Promise.all([api('api/info'), api('api/programs')]);
     this.info = info;
     const select = $('program-select');
     select.append(el('option', { value: '' }, programs.length ? 'Examples & programs…' : 'No programs found'));
@@ -73,7 +74,7 @@ class App {
   async loadSample(name) {
     let text;
     try {
-      const resp = await fetch(`/api/programs/${encodeURIComponent(name)}`);
+      const resp = await fetch(`api/programs/${encodeURIComponent(name)}`);
       if (!resp.ok) throw new Error(`Cannot load ${name} (HTTP ${resp.status})`);
       text = await resp.text();
     } catch (err) {
@@ -98,7 +99,7 @@ class App {
     this.hideToast();
     let payload, initial = null;
     try {
-      payload = await api('/api/analyze', { ...source, settings: useSettings });
+      payload = await api('api/analyze', { ...source, settings: useSettings });
       if (payload.initial_heights_gz) initial = await inflateTyped(payload.initial_heights_gz, Float32Array);
     } catch (err) {
       if (request !== this.requests) return;
@@ -337,7 +338,7 @@ class App {
     this.optimizeOptions = options;
     this.renderOptimize(true);
     try {
-      const result = await api('/api/optimize', { ...this.source, settings: this.settings, options });
+      const result = await api('api/optimize', { ...this.source, settings: this.settings, options });
       result.moveFeed = typed(result.move_feed, Float32Array);
       this.optimized = result;
       const opt = $('path-color').querySelector('[value="optimized"]');

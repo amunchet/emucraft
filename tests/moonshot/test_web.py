@@ -76,9 +76,9 @@ def planned(site):
 
 def test_page_is_served(site):
     status, page = request(f"{site}/")
-    assert status == 200 and b"/moonshot.js" in page
+    assert status == 200 and b'src="moonshot.js"' in page  # relative, so the page also works under /moonshot/
     status, script = request(f"{site}/moonshot.js")
-    assert status == 200 and b"/js/viewer.js" in script
+    assert status == 200 and b"'./js/viewer.js'" in script
     for shared in ("/js/viewer.js", "/js/util.js", "/css/app.css", "/vendor/three/three.module.min.js"):
         assert request(site + shared)[0] == 200, shared  # borrowed from the G-code viewer
     assert request(f"{site}/..%2Fpyproject.toml")[0] == 404
