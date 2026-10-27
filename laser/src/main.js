@@ -12,6 +12,38 @@ import { DEFAULT_LASER, beam_diameter, rayleigh_range, plan_grid } from './sim.j
 
 const $ = (id) => document.getElementById(id);
 
+// Turns the title into a menu that switches to the other Emucraft apps; a copy of appSwitcher in
+// emucraft/web/js/util.js, which this separately built app can't import.
+{
+  const APPS = [['emucraft', 'Emucraft', 8765], ['moonshot', 'Moonshot', 8766], ['laser', 'Laser Simulator', 5173]];
+  const brand = document.querySelector('h1');
+  const [first, ...rest] = location.hostname.split('.');
+  const local = !APPS.some(([name]) => name === first);
+  const menu = document.createElement('nav');
+  menu.className = 'app-menu';
+  for (const [name, label, port] of APPS) {
+    const a = menu.appendChild(document.createElement('a'));
+    a.href = `${location.protocol}//${local ? `${location.hostname}:${port}` : [name, ...rest].join('.')}/`;
+    a.textContent = label;
+    if (name === 'laser') a.setAttribute('aria-current', 'page');
+  }
+  const toggle = (open) => { menu.hidden = !open; brand.setAttribute('aria-expanded', open); };
+  brand.classList.add('app-switch');
+  Object.assign(brand, { tabIndex: 0, title: 'Switch app' });
+  brand.setAttribute('role', 'button');
+  brand.setAttribute('aria-haspopup', 'true');
+  brand.insertAdjacentHTML('beforeend', '<span class="caret"></span>');
+  brand.append(menu);
+  toggle(false);
+  brand.addEventListener('click', (e) => { if (!menu.contains(e.target)) toggle(menu.hidden); });
+  brand.addEventListener('keydown', (e) => {
+    if (e.target !== brand) return;
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(menu.hidden); }
+    if (e.key === 'Escape') toggle(false);
+  });
+  document.addEventListener('click', (e) => { if (!brand.contains(e.target)) toggle(false); });
+}
+
 // Material presets: base look plus the look of lasered material. mark_full = removed depth (mm) at which the
 // mark look is fully developed; preview = overlay colour used while aligning.
 const PRESETS = {

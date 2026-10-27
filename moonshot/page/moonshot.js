@@ -1,10 +1,11 @@
 // Moonshot's page: models, runs and their queued tasks through /api, and a planned part in 3D with the drum at
 // any point and the robot program played back. The 3D viewer and helpers are the G-code viewer's (/js/).
 import * as THREE from 'three';
-import { el, fmtClock, hexToRgb, ramp, rampCss, toolColor, typed } from '/js/util.js';
+import { appSwitcher, el, fmtClock, hexToRgb, ramp, rampCss, toolColor, typed } from '/js/util.js';
 import { Viewer } from '/js/viewer.js';
 
 const $ = id => document.getElementById(id);
+appSwitcher(document.querySelector('.brand'), 'moonshot');
 const PART = 0xb8b5ac, HOLDER = 0x77746d, DRUM = 0x2a78d6;
 const BLOCKED_PART = [0.86, 0.26, 0.26], BLOCKED_HOLDER = [0.42, 0.42, 0.42], NONE = [0.5, 0.5, 0.5];
 

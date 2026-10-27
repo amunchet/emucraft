@@ -338,7 +338,7 @@ laser.example.com {
 }
 ```
 
-Serve each at the root of a (sub)domain: the viewer and Moonshot's page call `/api/...` with absolute paths, so a path prefix won't work. Moonshot's MCP server checks `MOONSHOT_TOKEN` itself (set `MOONSHOT_URL` to its public address for download links); see [moonshot/README.md](moonshot/README.md#mcp-server).
+Serve each at the root of a (sub)domain: the viewer and Moonshot's page call `/api/...` with absolute paths, so a path prefix won't work. Clicking an app's name in its top bar switches to the others; it finds them by swapping the first label of the host name (`emucraft.example.com` -> `moonshot.example.com`, `laser.example.com`), so name the subdomains after the services as above. On `localhost` or an IP address it uses each app's default local port instead (8765, 8766, and the laser simulator's dev server on 5173). Moonshot's MCP server checks `MOONSHOT_TOKEN` itself (set `MOONSHOT_URL` to its public address for download links); see [moonshot/README.md](moonshot/README.md#mcp-server).
 
 The viewer lists the bundled `examples/` plus anything in `/programs` inside the container; uncomment the volume in `docker-compose.yml` to mount your own folder (an `emucraft.toml` there is picked up as the default config).
 

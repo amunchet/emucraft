@@ -8,11 +8,12 @@ import { StockView } from './stock.js';
 import { Timeline } from './timeline.js';
 import { buildTool, disposeTool } from './toolmodel.js';
 import { ToolpathView } from './toolpath.js';
-import { debounce, downloadText, el, fmtClock, fmtLen, hexToRgb, inflateTyped, rampCss, splitLines, toolColor, typed } from './util.js';
+import { appSwitcher, debounce, downloadText, el, fmtClock, fmtLen, hexToRgb, inflateTyped, rampCss, splitLines, toolColor, typed } from './util.js';
 import { Viewer } from './viewer.js';
 
 const $ = id => document.getElementById(id);
 const EMBED = window.EMUCRAFT_EMBED || null;
+if (!EMBED) appSwitcher(document.querySelector('.brand'), 'emucraft');
 
 async function api(path, body) {
   const resp = await fetch(path, body === undefined ? {} : {
