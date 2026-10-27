@@ -7,19 +7,21 @@ WORKDIR /build
 COPY kernel/ kernel/
 RUN make -C kernel native
 
-# --- Runtime: pure Python (stdlib server), no compiler needed ---
+# --- Runtime: pure Python (stdlib server), no compiler needed. The MCP SDK is for
+# the emucraft-mcp service, which runs this image with `emucraft mcp --http`. ---
 FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     EMUCRAFT_KERNEL=/app/lib/libemucraft.so
 
 WORKDIR /app
+RUN pip install --no-cache-dir "mcp>=2"
 COPY emucraft/ emucraft/
 COPY examples/ examples/
 COPY --from=kernel /build/kernel/build/libemucraft.so lib/
 
-# Optional: mount G-code here to list it in the viewer
-RUN mkdir /programs && useradd --system --no-create-home emucraft
+# Optional: mount G-code here to list it in the viewer. /data keeps the MCP server's settings.
+RUN mkdir /programs /data && useradd --system --no-create-home emucraft && chown emucraft /data
 USER emucraft
 
 EXPOSE 8000

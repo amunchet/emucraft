@@ -5,6 +5,7 @@
     emucraft optimize part.nc -o part.opt.nc --material titanium
     emucraft serve                       # web viewer on http://127.0.0.1:8765
     emucraft mcp                         # MCP server (stdio) for CAM pipelines
+    emucraft mcp --http --port 8000      # the same over streamable HTTP, at /mcp
 """
 
 from __future__ import annotations
@@ -247,13 +248,13 @@ def cmd_serve(args) -> int:
 
 def cmd_mcp(args) -> int:
     try:
-        from .mcp_server import server
+        from .mcp_server import serve
     except ModuleNotFoundError as exc:
         if not (exc.name or "").startswith("mcp"):
             raise
         print("emucraft: the MCP server needs Python 3.10+ and `pip install emucraft[mcp]`", file=sys.stderr)
         return EXIT_USAGE
-    server.run()
+    serve(args.http, args.host, args.port, args.programs)
     return EXIT_OK
 
 
@@ -311,7 +312,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--open", action="store_true", help="open a browser")
     p.set_defaults(func=cmd_serve)
 
-    p = sub.add_parser("mcp", help="run the MCP server (stdio) for CAM pipelines")
+    p = sub.add_parser("mcp", help="run the MCP server (stdio or HTTP) for CAM pipelines")
+    p.add_argument("--http", action="store_true", help="serve streamable HTTP at /mcp instead of stdio")
+    p.add_argument("--host", default="127.0.0.1", help="HTTP address (0.0.0.0 to deploy)")
+    p.add_argument("--port", type=int, default=8000)
+    p.add_argument("--programs", help="folder that `path` arguments are relative to and kept inside "
+                   "(over HTTP, without it only inline G-code is accepted)")
     p.set_defaults(func=cmd_mcp)
 
     return parser

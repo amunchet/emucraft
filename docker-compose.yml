@@ -4,6 +4,9 @@
 #   laser         laser engraving simulator http://laser:80
 #   laser-api     laser customer GLB API    http://laser-api:8001/api/laser/  (for the shop's backend)
 #   moonshot-mcp  Moonshot's MCP server     http://moonshot-mcp:8000/mcp  (only with --profile moonshot-mcp)
+#   emucraft-mcp  emucraft's MCP server     http://emucraft-mcp:8000/mcp  (only with --profile emucraft-mcp)
+#   laser-mcp     the laser MCP server      http://laser-mcp:8000/mcp     (only with --profile laser-mcp)
+# All three MCP servers: COMPOSE_PROFILES=moonshot-mcp,emucraft-mcp,laser-mcp docker compose up -d
 services:
   emucraft:
     build: .
@@ -82,9 +85,56 @@ services:
     networks:
       - emucraft
 
+  # emucraft's MCP server: the emucraft image, run as its own service. Mount programs on /programs to check them
+  # by `path`; otherwise callers pass G-code inline. Its detection settings (update_settings) are kept in /data.
+  emucraft-mcp:
+    image: emucraft:latest
+    container_name: emucraft-mcp
+    restart: unless-stopped
+    profiles: ["emucraft-mcp"]
+    depends_on:
+      - emucraft   # builds the image
+    command: ["python", "-m", "emucraft", "mcp", "--http", "--host", "0.0.0.0", "--port", "8000", "--programs", "/programs"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+    expose:
+      - "8000"
+    environment:
+      - EMUCRAFT_TOKEN=${EMUCRAFT_TOKEN:-}
+      - EMUCRAFT_MCP_CONFIG=/data/mcp.json
+    volumes:
+      - emucraft-mcp:/data
+    #   - ./programs:/programs:ro
+    networks:
+      - emucraft
+
+  # The laser MCP server (laser/mcp.mjs): the laser-api image, run as its own service. It shares LASER_SECRET with
+  # laser-api, so a part gets the same stand-in size from both.
+  laser-mcp:
+    image: emucraft-laser-api:latest
+    container_name: laser-mcp
+    restart: unless-stopped
+    profiles: ["laser-mcp"]
+    depends_on:
+      - laser-api   # builds the image
+    command: ["node", "mcp.mjs"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8000/health > /dev/null || exit 1"]
+    mem_limit: 4g
+    cpus: 4
+    expose:
+      - "8000"
+    environment:
+      - PORT=8000
+      - LASER_TOKEN=${LASER_MCP_TOKEN:-}
+      - LASER_SECRET=${LASER_SECRET:-}
+    networks:
+      - emucraft
+
 volumes:
   moonshot-web:
   moonshot-mcp:
+  emucraft-mcp:
 
 networks:
   emucraft:

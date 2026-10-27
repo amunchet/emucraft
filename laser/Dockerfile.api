@@ -1,10 +1,11 @@
 # Laser customer GLB API (server.mjs): simulation + customer GLB on port 8001. The simulator app itself is the
 # static build in Dockerfile (nginx). docker build -f laser/Dockerfile.api -t emucraft-laser-api laser/
+# The same image runs the laser MCP server (mcp.mjs) with `node mcp.mjs` (PORT, default 8002).
 FROM node:22-alpine
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
-COPY server.mjs ./
+COPY server.mjs mcp.mjs ./
 COPY src/ src/
 ENV HOST=0.0.0.0 PORT=8001
 USER node

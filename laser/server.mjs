@@ -171,21 +171,32 @@ if (workerData?.laser_job) {
   }
 }
 
+// Run a job (the JSON body, as bytes it may take over) in its own worker thread -> { glb, summary }. Errors carry the
+// HTTP status: 400 for a bad job, 504 past `timeout_s`, 499 once `signal` aborts (the caller has gone away).
+export const run_job = (body, { secret, timeout_s = 300, signal }) => new Promise((resolve, reject) => {
+  const w = new Worker(fileURLToPath(import.meta.url), { workerData: { laser_job: true, body, secret }, transferList: [body.buffer] });
+  const stop = (err) => { clearTimeout(timer); signal?.removeEventListener('abort', gone); w.terminate(); reject(err); };
+  const gone = () => stop(Object.assign(new Error('client went away'), { status: 499 }));
+  const timer = setTimeout(() => stop(Object.assign(new Error(`job took longer than ${timeout_s} s`), { status: 504 })), timeout_s * 1000);
+  signal?.addEventListener('abort', gone);
+  w.once('message', (m) => { clearTimeout(timer); signal?.removeEventListener('abort', gone); w.terminate(); m.ok ? resolve(m) : reject(Object.assign(new Error(m.message), { status: m.status })); });
+  w.once('error', stop);
+  w.once('exit', (code) => stop(new Error(`job thread exited (${code})`))); // no-op once settled
+});
+
+// GET /api/laser/info's answer: what a job can choose from
+export const info = () => ({ presets: Object.fromEntries(Object.entries(PRESETS).map(([k, p]) => [k, p.label])), laser: DEFAULT_LASER, defaults: DEFAULTS });
+
 // HTTP server; jobs beyond `jobs` concurrent ones get 503. A job's slot is held from before its body is read until
 // it ends, and a job whose client has gone away is stopped.
 export function make_server({ jobs = 2, timeout_s = 300, max_mb = 64, token = '', secret = randomBytes(32) } = {}) {
   const max_body = max_mb * 1024 * 1024, auth = Buffer.from(`Bearer ${token}`);
   let running = 0;
-  const run = (body, out) => new Promise((resolve, reject) => {
-    const w = new Worker(fileURLToPath(import.meta.url), { workerData: { laser_job: true, body, secret }, transferList: [body.buffer] });
-    const stop = (err) => { clearTimeout(timer); out.off('close', gone); w.terminate(); reject(err); };
-    const gone = () => stop(Object.assign(new Error('client went away'), { status: 499 }));
-    const timer = setTimeout(() => stop(Object.assign(new Error(`job took longer than ${timeout_s} s`), { status: 504 })), timeout_s * 1000);
-    out.on('close', gone);
-    w.once('message', (m) => { clearTimeout(timer); out.off('close', gone); w.terminate(); m.ok ? resolve(m) : reject(Object.assign(new Error(m.message), { status: m.status })); });
-    w.once('error', stop);
-    w.once('exit', (code) => stop(new Error(`job thread exited (${code})`))); // no-op once settled
-  });
+  const run = (body, out) => {
+    const gone = new AbortController();
+    out.on('close', () => gone.abort());
+    return run_job(body, { secret, timeout_s, signal: gone.signal });
+  };
   const send = (out, status, body, type, extra = {}) => {
     out.writeHead(status, { 'Content-Type': type, 'Content-Length': Buffer.byteLength(body), 'Cache-Control': 'no-store', ...extra });
     out.end(body);
@@ -196,10 +207,7 @@ export function make_server({ jobs = 2, timeout_s = 300, max_mb = 64, token = ''
     const path = new URL(req.url, 'http://x').pathname;
     let slot = false;
     try {
-      if (req.method === 'GET' && path === '/api/laser/info') {
-        const presets = Object.fromEntries(Object.entries(PRESETS).map(([k, p]) => [k, p.label]));
-        return send(out, 200, JSON.stringify({ presets, laser: DEFAULT_LASER, defaults: DEFAULTS }), 'application/json');
-      }
+      if (req.method === 'GET' && path === '/api/laser/info') return send(out, 200, JSON.stringify(info()), 'application/json');
       if (path !== '/api/laser/render') return fail(out, 404, 'not found');
       if (req.method !== 'POST') return fail(out, 405, 'use POST');
       if (token && !same(req.headers.authorization, auth)) return fail(out, 401, 'missing or wrong bearer token');

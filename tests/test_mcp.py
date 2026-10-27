@@ -114,3 +114,47 @@ def test_settings_tune_detection(settings_file):
     assert call("reset_settings")["settings"] == {}
     assert not settings_file.exists()
     assert call("get_settings")["defaults"]["fuzz_threshold"] == 0.85
+
+
+@pytest.fixture
+def served(monkeypatch):
+    """The module state `emucraft mcp --http` sets; restored after the test."""
+    def serve(folder=None):
+        monkeypatch.setattr(mcp_server, "remote", True)
+        monkeypatch.setattr(mcp_server, "programs", folder and folder.resolve())
+    return serve
+
+
+def test_http_without_a_programs_folder_takes_only_gcode(served):
+    served()
+    with pytest.raises(RuntimeError, match="pass the program as `gcode`"):
+        call("program_info", path=str(EXAMPLES / "crash_demo.nc"))
+    with pytest.raises(RuntimeError, match="no programs folder"):
+        call("list_programs")
+    assert call("program_info", gcode=HEADER)["stock"] is not None
+
+
+def test_programs_folder_keeps_paths_inside(served):
+    served(EXAMPLES)
+    assert "crash_demo.nc" in call("list_programs")["programs"]
+    assert call("program_info", path="crash_demo.nc")["name"] == "crash_demo.nc"
+    for outside in ("../README.md", "/etc/passwd"):
+        with pytest.raises(RuntimeError, match="outside the programs folder"):
+            call("program_info", path=outside)
+    with pytest.raises(RuntimeError, match="outside the programs folder"):
+        call("program_info", gcode=HEADER, config_path="../pyproject.toml")
+
+
+def test_http_app_needs_the_token(monkeypatch):
+    from starlette.testclient import TestClient
+
+    monkeypatch.setenv("EMUCRAFT_TOKEN", "secret")
+    app = mcp_server.guarded(mcp_server.server.streamable_http_app())
+    with TestClient(app, base_url="http://127.0.0.1:8000") as http:
+        assert http.get("/health").json() == {"status": "ok"}
+        assert http.post("/mcp", json={}).status_code == 401
+        hello = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+            "protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "test", "version": "1"}}}
+        got = http.post("/mcp", json=hello, headers={
+            "Authorization": "Bearer secret", "Accept": "application/json, text/event-stream"})
+        assert got.status_code == 200

@@ -51,26 +51,31 @@
 #   /moonshot/         Moonshot's web page       moonshot:8000
 #   /laser-simulator/  laser engraving simulator laser:80
 #   /moonshot-mcp/mcp  Moonshot's MCP server     moonshot-mcp:8000
+#   /emucraft-mcp/mcp  emucraft's MCP server     emucraft-mcp:8000
+#   /laser-mcp/mcp     the laser MCP server      laser-mcp:8000
+#
+# Each MCP server is an `auth0 { mcp }` route, so the token admin page at /admin
+# lists it and mints tokens for it (audience emu.north.altamontco.com/<name>-mcp).
 #
 # The app paths are fixed by the app switcher (APPS in emucraft's
 # emucraft/web/js/util.js and laser/src/main.js). The pages use relative URLs,
 # so each prefix is stripped with handle_path and needs its trailing slash.
 emu.north.altamontco.com {
-    # Everything except the MCP server is a browser app: signed-in users with
+    # Everything except the MCP servers is a browser app: signed-in users with
     # {$ACCESS_PERMISSION}. The MCP paths are left out, or this would send MCP
     # clients to the login page.
-    @apps not path /moonshot-mcp /moonshot-mcp/* /.well-known/oauth-protected-resource/*
+    @apps not path /moonshot-mcp /moonshot-mcp/* /emucraft-mcp /emucraft-mcp/* /laser-mcp /laser-mcp/* /.well-known/oauth-protected-resource/*
     encode @apps zstd gzip
     auth0 @apps {
         require {$ACCESS_PERMISSION:read}
     }
 
     # Writes need an extra permission. MCP requests are all POSTs, so they're
-    # left out here too; the MCP server has its own permission below. So is
+    # left out here too; the MCP servers have their own permission below. So is
     # the admin page, which has its own.
     @writes {
         method POST PUT PATCH DELETE
-        not path /moonshot-mcp /moonshot-mcp/* /admin /admin/*
+        not path /moonshot-mcp /moonshot-mcp/* /emucraft-mcp /emucraft-mcp/* /laser-mcp /laser-mcp/* /admin /admin/*
     }
     auth0 @writes {
         require {$WRITE_PERMISSION:write}
@@ -86,6 +91,18 @@ emu.north.altamontco.com {
     # MOONSHOT_URL=https://emu.north.altamontco.com/moonshot-mcp for the
     # download links list_files returns.
     auth0 /moonshot-mcp/* {
+        mcp
+        require mcp:tools
+    }
+
+    # emucraft's and the laser simulator's MCP servers, the same way:
+    #   https://emu.north.altamontco.com/emucraft-mcp/mcp  (leave EMUCRAFT_TOKEN unset)
+    #   https://emu.north.altamontco.com/laser-mcp/mcp     (leave LASER_MCP_TOKEN unset)
+    auth0 /emucraft-mcp/* {
+        mcp
+        require mcp:tools
+    }
+    auth0 /laser-mcp/* {
         mcp
         require mcp:tools
     }
@@ -107,9 +124,15 @@ emu.north.altamontco.com {
     handle_path /laser-simulator/* {
         reverse_proxy laser:80
     }
-    # No `encode` on this path (see @apps): MCP responses are event streams.
+    # No `encode` on these paths (see @apps): MCP responses are event streams.
     handle_path /moonshot-mcp/* {
         reverse_proxy moonshot-mcp:8000
+    }
+    handle_path /emucraft-mcp/* {
+        reverse_proxy emucraft-mcp:8000
+    }
+    handle_path /laser-mcp/* {
+        reverse_proxy laser-mcp:8000
     }
 
     handle {
