@@ -63,3 +63,6 @@ Closed three more size leaks in the customer GLB that an adversarial hunt found 
 - **Wall cut-off:** walls were dropped below a fixed 1e-4 mm height, which on feather-edged parts bounds the size. The cut-off is now relative to the texel.
 - **Engraving depth:** the normal map and the Dymondwood bands now use depth × jitter. Before, the real depth readable from the marks (`mark_full`) divided by the depth integrated from the normal map gave the size.
 - **Default placement:** the default placement (1 image px = 1 spot) is now jittered too. Before, the bitmap's pixel grid in the textures was a 0.05 mm ruler.
+
+## 2026-10-26 19:03 CDT
+Regression tests for the depth and default-placement leaks. One checks that the normal map's slopes scale with the jitter. The other is an HTTP test showing that the default pixel pitch matches the jitter shown by the wall tile period; it measures two stripes centre to centre, so the burn's spread cancels out. Both tests fail if their fix is reverted.

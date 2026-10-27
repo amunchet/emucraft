@@ -36,6 +36,12 @@ const parse = (glb) => {
   return { json, floats };
 };
 
+// a texture of the relief material, decoded: 'nrm' (normal map) or 'orm'
+const texture = (glb, json, which) => {
+  const m = json.materials[0], t = which === 'nrm' ? m.normalTexture : m.pbrMetallicRoughness.metallicRoughnessTexture;
+  const v = json.bufferViews[json.images[json.textures[t.index].source].bufferView], bin = 20 + new DataView(glb.buffer, glb.byteOffset).getUint32(12, true) + 8;
+  return PNG.sync.read(Buffer.from(glb.subarray(bin + v.byteOffset, bin + v.byteOffset + v.byteLength)));
+};
 // the wall texture period in file units: u runs along the wall at 1 / tile_mm per mm
 const wall_tile_mm = (json, floats) => {
   const wall = json.meshes[0].primitives[1], pos = floats(wall.attributes.POSITION), uv = floats(wall.attributes.TEXCOORD_0);
@@ -111,6 +117,19 @@ describe('customer GLB', () => {
     expect(pairs(1.07 * k_s)).toBeGreaterThan(5 * pairs(k_s));
     // wall texture period: (80 mm x 1.07)
     expect(wall_tile_mm(json, floats) / 1.07).toBeCloseTo(80 * k_s, 4);
+  });
+
+  it('shows the engraving depth scaled by the jitter, like every other length', async () => {
+    // the plate is flat, so the tangent-space normal's x / z is the slope along u; the real depth is in the marks
+    const slopes = async (jitter) => {
+      const { glb } = await customer_glb({ positions, res, placement, look, mesh_mm: 1, max_texture: 512, jitter }, png);
+      const nrm = texture(glb, parse(glb).json, 'nrm');
+      return Array.from({ length: nrm.width * nrm.height }, (_, k) => (nrm.data[k * 4] / 255 - 0.5) / (nrm.data[k * 4 + 2] / 255 - 0.5));
+    };
+    const [a, b] = [await slopes(1), await slopes(1.1)];
+    const ratios = a.map((v, k) => b[k] / v).filter((_, k) => Math.abs(a[k]) > 0.5).sort((p, q) => p - q);
+    expect(ratios.length).toBeGreaterThan(20);
+    expect(ratios[ratios.length >> 1]).toBeCloseTo(1.1, 1);
   });
 
   it('true_scale keeps metres', async () => {
@@ -209,6 +228,35 @@ describe('HTTP API', () => {
     expect(a1).toBeCloseTo(a2, 6);
     for (const v of [a1, b1]) { expect(v).toBeGreaterThanOrEqual(72); expect(v).toBeLessThanOrEqual(88); }
     expect(Math.abs(a1 - b1)).toBeGreaterThan(1e-3);
+  }, 120000);
+
+  it('jitters the default placement, so the bitmap pixel grid is no ruler', async () => {
+    // no width or height: 1 px = 1 spot (0.05 mm) x jitter. Two stripes 30 px apart must then be 1.5 mm x jitter apart
+    // in the file's scale, the same factor the wall tile period shows (centre to centre, so the burn's spread cancels)
+    const stripes = new Uint8Array(60 * 40 * 4).map((_, k) => (k % 4 === 3 ? 255 : [13, 14, 15, 16, 17, 43, 44, 45, 46, 47].includes((k >> 2) % 60) ? 0 : 255));
+    const srv = make_server({ secret: 'one' });
+    await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+    const body = { ...job(), image: { data: png(stripes, 60, 40).toString('base64') }, placement: {}, output: { max_texture: 2048 } };
+    const r = await fetch(`http://127.0.0.1:${srv.address().port}/api/laser/render`, { method: 'POST', body: JSON.stringify(body) });
+    srv.close();
+    expect(r.status).toBe(200);
+    const glb = new Uint8Array(await r.arrayBuffer()), { json, floats } = parse(glb), relief = json.meshes[0].primitives[0];
+    const jitter = (wall_tile_mm(json, floats) * 30) / 80;
+    expect(Math.abs(jitter - 1)).toBeGreaterThan(0.02); // the secret gives a factor that tells the two apart
+    const pos = floats(relief.attributes.POSITION), uv = floats(relief.attributes.TEXCOORD_0), orm = texture(glb, json, 'orm');
+    // file units per texel: relief u runs across the texture as x does across the file
+    const span = (arr, n, o) => { let lo = Infinity, hi = -Infinity; for (let k = o; k < arr.length; k += n) { lo = Math.min(lo, arr[k]); hi = Math.max(hi, arr[k]); } return hi - lo; };
+    const texel = span(pos, 3, 0) / span(uv, 2, 0) / orm.width, row = orm.height >> 1, mid = orm.width / 2;
+    // mark-weighted centre of each stripe (R = 1 - mark), within 2.5 mm of the centre, clear of the plate's hole
+    const centre = (side) => {
+      let w = 0, x = 0;
+      for (let i = 0; i < orm.width; i++) {
+        const d = (i + 0.5 - mid) * side;
+        if (d > 0 && d * texel < 2.5 / 30) { const m = 255 - orm.data[(row * orm.width + i) * 4]; w += m; x += m * (i + 0.5); }
+      }
+      return x / w;
+    };
+    expect(((centre(1) - centre(-1)) * texel * 30) / 1.5).toBeCloseTo(jitter, 2);
   }, 120000);
 
   it('checks the bearer token when one is set', async () => {
