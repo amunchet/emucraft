@@ -21,9 +21,14 @@ subdomains, and the app switcher links by path. Every URL the pages use is now r
 - Emucraft's `/api` calls.
 - Moonshot's stylesheets, scripts, import map and API calls, plus the root-relative file links its server returns, which are
   rewritten on the page.
-- The laser build, which now uses `--base=./`.
+- The laser build, which now sets `base: './'` in `laser/vite.config.js` (both the simulator and the customer viewer page).
 
 This is still frontend only. The README's Caddy example uses `handle_path` to strip each prefix, plus a `redir` that adds the
 trailing slash the relative URLs need. Run locally, each app is still served at the root of its own port, and the switcher
 links to those ports. Tested behind a prefix-stripping proxy: all three pages load with no failed requests and switch to
 each other.
+
+## 2026-10-27 01:56 CDT
+Merged `master` (the laser render API, #10). Master moved the laser presets out of `laser/src/main.js`, so the switcher block
+now sits beside master's version of that file. Master also added `laser/vite.config.js`, so the relative build base moved
+into it, where it covers the new customer viewer page too.

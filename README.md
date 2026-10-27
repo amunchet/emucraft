@@ -312,13 +312,14 @@ Each web app has its own Docker image, and none has authentication of its own - 
 | `emucraft` | `Dockerfile` | the G-code viewer (`emucraft serve`) on port 8000 |
 | `moonshot` | `moonshot/Dockerfile` (repository root as context) | Moonshot's web page (`moonshot-web`) on port 8000, models and runs in the `moonshot-web` volume |
 | `laser` | `laser/Dockerfile` | the laser engraving simulator, a static build served by nginx on port 80 |
+| `laser-api` | `laser/Dockerfile.api` | the laser customer GLB API (`laser/server.mjs`) on port 8001; call it from the shop's backend, see [Customer GLB API](#customer-glb-api-laserservermjs) |
 | `moonshot-mcp` | the `moonshot` image | Moonshot's MCP server on port 8000 (`/mcp`), its own `moonshot-mcp` volume; only with `--profile moonshot-mcp` |
 
 The compose file joins an **external** Docker network (`emucraft` by default, override with `EMUCRAFT_NETWORK`) and publishes no ports:
 
 ```bash
 docker network create emucraft   # once, if your Caddy stack doesn't already create it
-docker compose up -d --build                                            # emucraft, moonshot, laser
+docker compose up -d --build                                            # emucraft, moonshot, laser, laser-api
 MOONSHOT_TOKEN=... docker compose --profile moonshot-mcp up -d --build  # also Moonshot's MCP server
 ```
 
@@ -369,6 +370,76 @@ Model (`laser/src/sim.js`):
 - Passes are simulated in up to 24 steps. In each step every cell removes `max(0, grey · power/max · (spot/d)² − threshold) / (1 − threshold) · depth_per_pass`. That removal is spread by a Gaussian with σ = d/4, using the cell's own current defocus. Deeper cuts therefore grow wider, shallower and fuzzier.
 
 Sample: `laser/samples/` has a parametric full-size 1911 grip panel with a strong crown (7.6 mm thick at the centre, ~3.3 mm at the edges before the round-over) (`node make_1911_grip.mjs` writes `1911_grip.stl`) and a full-coverage design that bleeds past the panel edges (`1911_grip_design.png`, drawn by `make_1911_bitmap.mjs`, which needs playwright and a Chromium). Load both, then set W = 47 mm (aspect locked), X = Y = 0.125 and angle 0 to line the design up with the panel.
+
+### Customer GLB API (`laser/server.mjs`)
+A small Node service runs the same simulation and returns **one `.glb` file** to hand to a three.js frontend. The file shows the engraved part faithfully but does not carry the solid itself.
+
+Run it with `cd laser && npm install && node server.mjs`. It listens on `127.0.0.1:8001`. Environment variables:
+- `HOST`, `PORT`
+- `LASER_JOBS`: concurrent jobs (default 2)
+- `LASER_TIMEOUT_S`: per-job time limit (default 300)
+- `LASER_MAX_MB`: request body cap (default 64)
+- `LASER_TOKEN`: if set, requests must send `Authorization: Bearer <token>`
+- `LASER_SECRET`: keys the per-part size factor (below). If unset, a random one is made at each start, so a restart gives the same part a new factor.
+
+With Docker, `docker compose up -d --build` also starts the `laser-api` container (built from `laser/Dockerfile.api`), capped at 4 GB of memory and 4 CPUs. Set `LASER_TOKEN` and `LASER_SECRET` in the environment that runs compose to pass them through.
+
+A render of the sample grip takes about 30 s of CPU and peaks at about 0.5 GB of memory. Call it from the shop's backend and pass the GLB on to the browser, or set `LASER_TOKEN`. Don't route it publicly without authentication. If the backend reaches it through Caddy:
+
+```
+handle /api/laser/* {
+    reverse_proxy laser-api:8001
+}
+```
+
+Guard rails:
+- Images over 25 MP and placements so small that the spot would cover hundreds of pixels are rejected before any work starts.
+- A job whose client disconnects is stopped.
+
+- `GET /api/laser/info` returns the material presets, the laser defaults and the output defaults.
+- `POST /api/laser/render` takes a JSON job and returns `model/gltf-binary`. A summary goes in the `X-Laser-Summary` header: texture size, triangle counts, max engraved depth and bytes. It deliberately contains nothing that gives away the part's size. A bad job gets `400 {"error": "..."}`; unknown fields are rejected, not ignored. When `LASER_JOBS` jobs are already running, it returns `503`.
+
+```json
+{
+  "model": { "format": "stl", "data": "<base64 STL (binary or ASCII) or OBJ text>" },
+  "image": { "data": "<base64 PNG or JPEG>" },
+  "placement": { "cx": 0.125, "cy": 0.125, "angle_deg": 0, "width_mm": 47 },
+  "laser": { "focus_offset_mm": -2, "passes": 10 },
+  "supersample": 2,
+  "material": { "preset": "super_rosewood", "tex_scale_mm": 80 },
+  "output": { "mesh_mm": 0.5, "max_texture": 2048, "true_scale": false }
+}
+```
+
+Field defaults:
+- **Placement:** the same frame and numbers the app's Alignment panel shows (model centred in XY, lowest point at Z = 0). If width and height are both left out, one pixel equals one spot. If only one is given, the other keeps the image's aspect ratio.
+- **`laser`:** any subset of the simulator's laser parameters.
+- **`material`:** a preset, optionally overriding `color`, `mark`, `rough`, `metal`, `mark_rough` and `mark_metal`, or supplying a custom base `texture` (base64 image).
+- **`output.mesh_mm`:** the geometry resolution, 0.1–2 mm. It is never finer than 2 texels or 1/1024 of the part.
+- **`output.max_texture`:** caps the texture size.
+- **`output.true_scale`:** keeps real size in metres. By default the part is scaled so its longest side is 1.
+
+What the file contains:
+- **Shape:** only the side the laser sees, as an open shell. The front relief is sampled every `mesh_mm` (0.5 mm by default) from the *unengraved* surface, and the outline walls drop to the base. There is no back, no closed volume, and no real-world scale unless asked for. Names and metadata are stripped.
+- **Scale hiding:** the file is a faithful render of a stand-in part. The stand-in is the real part and its placement scaled by a factor between 0.9 and 1.1, engraved with the same laser settings. Every length in the file measures the stand-in: the mesh pitch, the texture tiles, the bitmap's pixel grid, the spot blur, defocus and depths. So the real size is known only to within ±10 %. The factor comes from an HMAC of the part's geometry, so rendering the same part again gives the same factor and repeated renders can't be averaged to narrow it down. A job with no `width_mm` or `height_mm` puts 1 pixel = 1 spot on the stand-in, so the design's size relative to the part varies by up to ±10 %; give a size to fix it. `true_scale` turns all of this off.
+- **Detail:** fine detail is in the textures. Colour holds the material and the burn marks, a tangent-space normal map holds the engraving and the fine surface shape, a packed texture holds roughness, metalness and clearcoat, and an alpha mask cuts the exact outline and holes.
+- **Size:** about 5–7 MB for the sample grip (the full-detail app export is about 78 MB). It passes the Khronos glTF validator with no errors or warnings.
+
+Limits of the protection: anything a browser can display can be captured, so this makes reverse engineering impractical, not impossible.
+- The silhouette and the front shape at `mesh_mm` resolution are visible by nature.
+- Someone could rebuild an approximate front surface by integrating the normal map.
+- They could close it into a plausible solid by hand.
+- They would not get the back, mating features, true dimensions, or engraving depths as geometry.
+
+Raise `mesh_mm` for coarser geometry; the normal map keeps the render looking the same.
+
+Viewing: `laser/viewer.html` is a reference customer viewer. It is plain three.js with the simulator's studio lighting; open it with `?src=<glb url>` or drop a file on it. Any `GLTFLoader` setup works:
+
+```js
+const gltf = await new GLTFLoader().loadAsync('/part.glb'); // from POST /api/laser/render
+scene.add(gltf.scene);              // Y up, longest side 1 (unless true_scale)
+controls.maxPolarAngle = Math.PI * 0.47; // there is no back: keep the camera above the part
+```
 
 Limitations and next steps: STEP/IGES import (would need occt-import-js), lasers that don't fire straight down or rotary axes, heightmap export, and splitting the 720 kB bundle into smaller chunks.
 

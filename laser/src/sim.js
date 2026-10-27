@@ -263,3 +263,13 @@ export function plan_grid(img_w, img_h, supersample = 1, max_cells = 4e6) {
   }
   return { grid_w, grid_h };
 }
+
+// One whole job (what the Web Worker and the API run): grid plan, image resample, surface raster, engraving.
+export function simulate({ positions, grey, img_w, img_h, placement, laser, supersample }, on_progress) {
+  const { grid_w, grid_h } = plan_grid(img_w, img_h, supersample);
+  const intensity = grey_to_intensity(resample_image(grey, img_w, img_h, grid_w, grid_h), laser);
+  const surface = rasterize_surface(positions, placement, grid_w, grid_h);
+  if (surface.every(Number.isNaN)) throw new Error('the image footprint does not overlap the model');
+  const pixel_mm = (placement.width_mm / grid_w + placement.height_mm / grid_h) / 2;
+  return { grid_w, grid_h, surface, ...engrave(surface, intensity, grid_w, grid_h, pixel_mm, laser, on_progress) };
+}

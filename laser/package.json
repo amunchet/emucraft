@@ -5,14 +5,17 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build --base=./",
+    "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run"
   },
   "dependencies": {
+    "jpeg-js": "^0.4.4",
+    "pngjs": "^7.0.0",
     "three": "^0.186.1"
   },
   "devDependencies": {
+    "gltf-validator": "^2.0.0-dev.3.10",
     "vite": "^8.3.5",
     "vitest": "^5.0.5"
   }
