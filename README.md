@@ -279,8 +279,9 @@ jobs:
 
 ## MCP server
 
-`emucraft mcp` serves Emucraft over the Model Context Protocol (stdio), so a
-generative CAM pipeline or an agent can check each program it produces. It
+`emucraft mcp` serves Emucraft over the Model Context Protocol (stdio, or
+streamable HTTP with `--http`), so a generative CAM pipeline or an agent can
+check each program it produces. It
 needs Python 3.10+ and the `mcp` extra:
 
 ```sh
@@ -295,6 +296,7 @@ pip install -e ".[mcp]"
 |---|---|
 | `check_program` | Full collision check. Returns status, issues with lines and depths, interpreter messages, and the tool geometry with where each value came from. Takes `stock`, per-tool `tools` overrides and `resolution` |
 | `program_info` | What was read from comments and macro variables, with each value's line and text, without simulating. Pass a few comment lines as `gcode` to try detection settings |
+| `list_programs` | The programs in the `--programs` folder, as `path` values for the other tools |
 | `get_settings` / `update_settings` / `reset_settings` | View and change the server's saved settings, mainly comment detection (`comment_aliases`, `comment_rules`, `variable_rules`, `check.fuzz_threshold`) and tool defaults |
 
 Programs are passed as a file `path` or inline `gcode`. Each call uses the
@@ -303,6 +305,16 @@ then the saved settings. The saved settings are an ordinary emucraft JSON
 config at `~/.config/emucraft/mcp.json` (override with
 `EMUCRAFT_MCP_CONFIG`), so `emucraft check -c` can use them too. Every
 result names the config it used.
+
+```sh
+emucraft mcp --http --host 0.0.0.0 --port 8000 --programs /programs  # streamable HTTP at /mcp, GET /health
+```
+
+With `--programs`, `path` and `config_path` are relative to that folder and
+cannot leave it. Over HTTP without it, only inline `gcode` is accepted, so a
+caller cannot read the server's files. With `EMUCRAFT_TOKEN` set, `/mcp`
+needs `Authorization: Bearer <token>`. Deployed, this is the `emucraft-mcp`
+service (see [Web Deployment](#web-deployment)).
 
 ## Web Deployment
 Each web app has its own Docker image, and none has authentication of its own - they are meant to sit behind a reverse proxy (Caddy) that handles that:
@@ -314,6 +326,8 @@ Each web app has its own Docker image, and none has authentication of its own - 
 | `laser` | `laser/Dockerfile` | the laser engraving simulator, a static build served by nginx on port 80 |
 | `laser-api` | `laser/Dockerfile.api` | the laser customer GLB API (`laser/server.mjs`) on port 8001; call it from the shop's backend, see [Customer GLB API](#customer-glb-api-laserservermjs) |
 | `moonshot-mcp` | the `moonshot` image | Moonshot's MCP server on port 8000 (`/mcp`), its own `moonshot-mcp` volume; only with `--profile moonshot-mcp` |
+| `emucraft-mcp` | the `emucraft` image | emucraft's MCP server (`emucraft mcp --http`) on port 8000, settings in the `emucraft-mcp` volume, programs from `/programs`; only with `--profile emucraft-mcp` |
+| `laser-mcp` | the `laser-api` image | the laser MCP server (`laser/mcp.mjs`) on port 8000; only with `--profile laser-mcp`, see [Laser MCP server](#laser-mcp-server-lasermcpmjs) |
 
 The compose file joins an **external** Docker network (`emucraft` by default, override with `EMUCRAFT_NETWORK`) and publishes no ports:
 
@@ -321,6 +335,7 @@ The compose file joins an **external** Docker network (`emucraft` by default, ov
 docker network create emucraft   # once, if your Caddy stack doesn't already create it
 docker compose up -d --build                                            # emucraft, moonshot, laser, laser-api
 MOONSHOT_TOKEN=... docker compose --profile moonshot-mcp up -d --build  # also Moonshot's MCP server
+COMPOSE_PROFILES=moonshot-mcp,emucraft-mcp,laser-mcp docker compose up -d --build  # all three MCP servers
 ```
 
 Then, in the Caddy stack (attached to the same network), serve all three on one host, each under its own path:
@@ -343,7 +358,7 @@ example.com {
 }
 ```
 
-The production config is in [`Caddyfile`](Caddyfile), kept for reference. It adds Auth0 sign-in and write permissions (via caddy-auth0), Moonshot's MCP server at `/moonshot-mcp/mcp`, an `/admin` page, and a redirect from `/` to `/emucraft/`.
+The production config is in [`Caddyfile`](Caddyfile), kept for reference. It adds Auth0 sign-in and write permissions (via caddy-auth0), the MCP servers at `/moonshot-mcp/mcp`, `/emucraft-mcp/mcp` and `/laser-mcp/mcp`, an `/admin` page, and a redirect from `/` to `/emucraft/`. The `/admin` page mints tokens for every `auth0 { mcp }` route in the Caddyfile, so it covers all three MCP servers; Caddy checks the tokens and strips them, so leave `MOONSHOT_TOKEN`, `EMUCRAFT_TOKEN` and `LASER_MCP_TOKEN` unset there.
 
 `handle_path` strips the prefix, so each app still sees itself at `/`. The pages use only relative URLs, so they work under any prefix, but they need the trailing slash, which is why each path has a `redir`. Clicking an app's name in its top bar switches to the others at `/emucraft/`, `/moonshot/` and `/laser-simulator/`. These paths are fixed in `APPS` in `emucraft/web/js/util.js` and its copy in `laser/src/main.js`. Anywhere else, such as running locally, it links to each app's default port on the same host instead (8765, 8766, and the laser simulator's dev server on 5173). Moonshot's MCP server checks `MOONSHOT_TOKEN` itself (set `MOONSHOT_URL` to its public address for download links); see [moonshot/README.md](moonshot/README.md#mcp-server).
 
@@ -442,6 +457,16 @@ const gltf = await new GLTFLoader().loadAsync('/part.glb'); // from POST /api/la
 scene.add(gltf.scene);              // Y up, longest side 1 (unless true_scale)
 controls.maxPolarAngle = Math.PI * 0.47; // there is no back: keep the camera above the part
 ```
+
+### Laser MCP server (`laser/mcp.mjs`)
+The same jobs as MCP tools, for an agent, over streamable HTTP at `/mcp` (stateless; `GET /health` for liveness):
+
+| Tool | What it does |
+|---|---|
+| `laser_info` | The material presets, the laser defaults and the option defaults, as `GET /api/laser/info` |
+| `render_glb` | A job, with the model and image as `model_format`, `model_data` and `image_data` (base64) and the other fields as above. Returns the summary and the GLB as an embedded `model/gltf-binary` resource. Bad jobs come back as tool errors with the reason |
+
+Run it with `cd laser && node mcp.mjs` (port 8002) or as the `laser-mcp` service. It takes the API's environment variables (`LASER_TOKEN` guards `/mcp`), and should get the API's `LASER_SECRET` so a part gets the same stand-in size from both. Tool calls carry the files in base64, so the request cap `LASER_MAX_MB` applies to the whole call.
 
 Limitations and next steps: STEP/IGES import (would need occt-import-js), lasers that don't fire straight down or rotary axes, heightmap export, and splitting the 720 kB bundle into smaller chunks.
 

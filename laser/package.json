@@ -10,9 +10,11 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "jpeg-js": "^0.4.4",
     "pngjs": "^7.0.0",
-    "three": "^0.186.1"
+    "three": "^0.186.1",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "gltf-validator": "^2.0.0-dev.3.10",

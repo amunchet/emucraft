@@ -1,8 +1,12 @@
 """MCP server: collision checks and comment detection for a CAM pipeline.
 
-    emucraft mcp          # stdio transport; needs `pip install emucraft[mcp]`
+    emucraft mcp                                   # stdio transport; needs `pip install emucraft[mcp]`
+    emucraft mcp --http --port 8000 --programs DIR  # streamable HTTP at /mcp, plus GET /health
 
-Programs are passed as a file ``path`` or inline ``gcode``. The configuration
+Programs are passed as a file ``path`` or inline ``gcode``. With a programs folder, ``path`` is relative
+to it and cannot leave it, and list_programs shows what is there; served over HTTP without one, only
+``gcode`` is accepted, so callers cannot read the server's files. With $EMUCRAFT_TOKEN set, every HTTP
+request to /mcp needs ``Authorization: Bearer <token>``. The configuration
 for a call is, first found: ``config_path``, an emucraft.toml / .json next to
 the program, then the server's settings file (edited with update_settings,
 and an ordinary emucraft JSON config, so ``emucraft check -c`` can use it).
@@ -12,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -23,6 +28,11 @@ from .config import ConfigError, config_from_dict, find_config, load_config
 from .gcode import DEFAULT_COMMENT_RULES, DEFAULT_FUZZ_THRESHOLD, DEFAULT_LABEL_ALIASES, DEFAULT_VARIABLE_RULES
 from .kernel import KernelError
 from .model import Config, StockSpec, resolve_stock, resolve_tools
+from .server import PROGRAM_SUFFIXES
+
+# Where `path` and `config_path` may point: anywhere (None), or inside this folder. Set by serve().
+programs: Optional[Path] = None
+remote = False  # served over HTTP: with no programs folder, `path` is refused
 
 server = MCPServer(
     "emucraft",
@@ -56,10 +66,23 @@ def _saved_settings() -> Dict[str, Any]:
         raise ToolError(f"{path} is not valid JSON ({exc}); fix it or call reset_settings") from None
 
 
+def _file(path: Optional[str]) -> Optional[str]:
+    """A `path` or `config_path` argument, kept inside the programs folder when there is one."""
+    if path is None or (programs is None and not remote):
+        return path
+    if programs is None:
+        raise ToolError("This server has no programs folder: pass the program as `gcode`")
+    file = (programs / path).resolve()
+    if not file.is_relative_to(programs):
+        raise ToolError(f"{path} is outside the programs folder")
+    return str(file)
+
+
 def _load(path: Optional[str], gcode: Optional[str], config_path: Optional[str]) -> Tuple[str, str, Config, Optional[str]]:
     """(text, name, config, where the config came from) for a tool call."""
     if (path is None) == (gcode is None):
         raise ToolError("Pass exactly one of `path` or `gcode`")
+    path, config_path = _file(path), _file(config_path)
     try:
         text = Path(path).read_text(encoding="utf-8", errors="replace") if path else gcode
         source = config_path or (find_config(path) if path else None)
@@ -69,6 +92,18 @@ def _load(path: Optional[str], gcode: Optional[str], config_path: Optional[str])
     except (OSError, ConfigError) as exc:
         raise ToolError(str(exc)) from None
     return text, Path(path).name if path else "program", config, None if source is None else str(source)
+
+
+@server.tool()
+def list_programs() -> dict:
+    """The programs in the server's programs folder, as `path` values for the other tools."""
+    if programs is None:
+        raise ToolError("This server has no programs folder")
+    return {
+        "folder": str(programs),
+        "programs": sorted(str(f.relative_to(programs)) for f in programs.rglob("*")
+                           if f.is_file() and f.suffix.lower() in PROGRAM_SUFFIXES),
+    }
 
 
 @server.tool()
@@ -211,3 +246,45 @@ def reset_settings() -> dict:
     if path.is_file():
         path.unlink()
     return {"settings_file": str(path), "settings": {}}
+
+
+@server.custom_route("/health", methods=["GET"])
+async def health(request):
+    """Liveness, for the container's health check."""
+    from starlette.responses import JSONResponse
+
+    return JSONResponse({"status": "ok"})
+
+
+def guarded(app):
+    """The HTTP app behind $EMUCRAFT_TOKEN, when it is set."""
+    token = os.environ.get("EMUCRAFT_TOKEN")
+
+    async def wrapper(scope, receive, send):
+        if token and scope["type"] == "http" and scope["path"].startswith("/mcp"):
+            from starlette.responses import JSONResponse
+
+            headers = dict(scope["headers"])
+            if not secrets.compare_digest(headers.get(b"authorization", b"").decode(), f"Bearer {token}"):
+                await JSONResponse({"error": "unauthorized"}, status_code=401)(scope, receive, send)
+                return
+        await app(scope, receive, send)
+
+    return wrapper
+
+
+def serve(http: bool = False, host: str = "127.0.0.1", port: int = 8000, folder: Optional[str] = None) -> None:
+    """Run the server over stdio, or streamable HTTP at /mcp."""
+    global programs, remote
+    if folder:
+        programs = Path(folder).resolve()
+        if not programs.is_dir():
+            raise SystemExit(f"emucraft: {folder} is not a folder")
+    remote = http
+    if not http:
+        server.run()
+        return
+    import uvicorn
+
+    # On localhost the SDK guards against DNS rebinding; deployed, Caddy or the token is the guard.
+    uvicorn.run(guarded(server.streamable_http_app(host=host)), host=host, port=port)
