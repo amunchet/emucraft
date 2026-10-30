@@ -226,6 +226,18 @@ body.dragging .drop { display: grid; }
 .issue.info .kind { color: var(--muted); }
 .issue .where { float: right; font-family: var(--mono); font-size: 11px; color: var(--muted); }
 .issue .msg { margin-top: 3px; }
+.hold {
+  display: grid; gap: 3px; border: 1px solid var(--border); border-left: 3px solid var(--muted); border-radius: 6px;
+  padding: 8px 10px; margin-bottom: 10px; background: var(--panel-2);
+}
+.hold .kind { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; font-weight: 700; color: var(--muted); }
+.hold.ok { border-left-color: var(--ok); }
+.hold.ok .kind { color: var(--ok); }
+.hold.error { border-left-color: var(--err); }
+.hold.error .kind, .hold .problem { color: var(--err); }
+.hold .msg { margin-top: 3px; cursor: pointer; }
+.hold .msg:hover { color: var(--accent); }
+.hold .where { float: right; font-family: var(--mono); font-size: 11px; color: var(--muted); }
 .all-clear { text-align: center; padding: 20px 8px; color: var(--ok); font-weight: 600; }
 .all-clear svg { width: 36px; height: 36px; display: block; margin: 0 auto 8px; }
 

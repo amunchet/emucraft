@@ -107,6 +107,7 @@ flowchart LR
 | `link-cut` | A feed move at or above `link_feed` (high-feed "fly" links) removes material (warning) |
 | `travel` | The path leaves the machine travel limits, if configured |
 | `tool` | A tool is used for cutting but its geometry is unknown |
+| `workholding` | The cutting load can move the part in its vise or under its clamps (only with a [`[workholding]`](#workholding) setup) |
 
 The interpreter also reports program problems: arcs whose end point is off
 the circle, feed moves without F, unsupported codes (G68, G51, G43.4 ...),
@@ -186,6 +187,127 @@ split where a slow zone starts or ends; arcs and cycles get their slowest
 feed. The modal feed is restored after each zone. The optimizer
 re-interprets its own output and refuses to write it unless the path matches
 the original exactly.
+
+## Workholding
+
+Will the part stay put? With a `[workholding]` section, `emucraft check` works
+out the peak cutting load of every cut in the program and checks that the vise
+or toe clamps hold it with a safety factor, at the torque you give. It also
+tells you the least torque that holds the whole program, and whether that is
+within what the fixture takes.
+
+```toml
+units = "inch"              # lengths in inches, forces in lbf, torques in ft-lbf (mm: N, N-m)
+
+[workholding]
+material = "steel"          # see the table below; default: [optimize] material
+fixture = "vise"
+grip = 0.5                  # height of the part held in the jaws, from its bottom
+torque = 40                 # handle torque you apply (leave out to just get the requirement)
+force_per_torque = 100      # the vise maker's clamping force per ft-lbf on the handle
+max_torque = 80             # the vise maker's maximum
+# jaw_width = 6             # default: the jaws grip the whole length of the part
+# axis = "y"                # direction the jaws close
+# safety_factor = 2         # required margin on the worn-tool load
+# wear_factor = 1.5         # cutting force of a worn tool over a sharp one
+# friction = 0.15           # jaw (or clamp) friction coefficient
+# lift_stop = true          # a dovetail, step jaws or bolts stop the part lifting
+```
+
+```toml
+[workholding]               # toe clamps instead
+material = "aluminum"
+fixture = "clamps"
+clamps = [[0.5, 0.5], [3.5, 0.5], [0.5, 2.5], [3.5, 2.5]]   # where each clamp presses (X, Y)
+bolt = 0.625                # stud diameter; standard UNC / ISO coarse sizes give the bolt limit
+torque = 60                 # on each nut
+# lever = 0.5               # share of the bolt force on the part: heel distance / heel-to-part distance
+# nut_factor = 0.2          # torque = nut_factor x bolt force x diameter (0.2 dry, about 0.15 oiled)
+# bolt_grade = "5"          # 5, 8, 8.8, 10.9 or 12.9; or set max_torque (your T-slot limit)
+```
+
+```console
+$ emucraft check part.nc
+FAIL  0 collisions, 1 workholding failure
+  x line 20          workholding      Cutting load can move the part: it rocks in the jaws (holding margin 1.87x, needs 2x); T1 pushes 399 lbf sideways and lifts 179 lbf  at X0.0000 Y1.0000 Z-0.2500
+
+Workholding: vise, steel, worn tool x1.5, safety factor 2, friction 0.15
+  weakest cut: line 20, T1 0.2500 deep x 0.4782 wide at F12 S3000: 399 lbf sideways, 179 lbf lift; the part rocks in the jaws
+  40 ft-lbf (4000 lbf) is NOT enough: margin 1.87x, needs 2x
+  needs at least 42.9 ft-lbf (4289 lbf); the fixture takes up to 80 ft-lbf
+```
+
+**The cutting load.** The simulation splits the path into pieces a quarter of
+the tool diameter long and measures what each one cuts: the axial depth and the
+cross-section, and so the radial width. Kienzle's law, `kc = kc1 * h^-mc` per
+tooth with the chip thickness `h = fz * sin(angle)`, gives the tangential force
+of every tooth in the cut; the peak over a turn of a *straight-fluted* cutter
+is taken, which is never less than a helical cutter's. The radial force is
+`radial_ratio` (0.5) of the tangential one, and a right-hand helix pulls the
+part up with `axial_ratio` (0.5) of it. Drills and plunges load the part with
+their torque, from the cutting power (`kc * area * feed per rev / 2 pi`). Every
+load is multiplied by `wear_factor` for a worn tool. The sideways force is
+assumed to point whichever way is worst.
+
+**The fixture.** Holding is friction, and it grows in proportion to the
+clamping force:
+
+- *Vise:* the two jaws hold `2 x friction x clamping force` against the force in
+  their plane: along the jaws, and upwards. A force high above the jaws, or a
+  lift near one end, rocks the part about the clamping axis; the floor or
+  parallels under the far end take that moment, and the jaws must hold the near
+  end down, which adds to the upward force. The fixed jaw, the screw and the
+  floor take everything else, and a rectangular part cannot turn between rigid
+  jaws.
+- *Clamps:* each clamp presses with `lever x torque / (nut_factor x diameter)`.
+  Friction under the part and under the clamp tips resists sliding and turning
+  (combined linearly, which is conservative), and the clamp forces resist the
+  part lifting or tipping over an edge of its footprint.
+
+The **margin** is how many times the worn-tool load the fixture holds; it must
+reach `safety_factor`. Because holding scales with the clamping force, the
+required torque is `torque x safety_factor / margin`. The **fixture limit** is
+`max_torque` if you give it, else for clamps the torque that loads the bolt to
+75 % of its proof load (the usual ceiling for a joint that is undone again). A
+requirement above the limit means the job cannot be held safely by friction:
+use a positive stop or dovetail, lighter cuts, or other workholding.
+
+| Material | kc1 (N/mm²) | mc |
+|---|---|---|
+| `aluminum` | 700 | 0.25 |
+| `brass` | 780 | 0.18 |
+| `cast_iron` | 1100 | 0.28 |
+| `steel` (low and medium carbon) | 1700 | 0.25 |
+| `alloy_steel` (pre-hardened) | 2000 | 0.25 |
+| `stainless` (austenitic) | 2000 | 0.21 |
+| `titanium` (Ti-6Al-4V) | 1400 | 0.23 |
+| `inconel` (718) | 3300 | 0.24 |
+| `hardened_steel` (~55 HRC) | 4800 | 0.25 |
+
+These are typical published Kienzle values for each family, as tool makers'
+catalogues tabulate them; give `kc1` and `mc` for your exact alloy. Check the
+defaults against your own data too: friction 0.15 suits smooth, dry or oiled
+steel jaws (serrated jaws grip better, coolant lowers it); the vise's
+`force_per_torque` and maximum come from its maker (a 6 in mechanical vise is
+typically around 100 lbf per ft-lbf).
+
+What it needs and assumes:
+
+- **Flutes and spindle speed.** The chip thickness comes from the feed, the
+  spindle speed and the number of flutes. A tool with no `Number of Flutes`
+  comment is worked out with 1 flute, the worst case, and a warning: set
+  `flutes` under `[tools.N]` or in the viewer. A cut without a spindle speed is
+  an error.
+- The stock box is the part: the jaws grip it from its bottom, the clamps press
+  on it, and it sits flat on the table, parallels or vise floor. The part is
+  rigid, and the clamping force is what the torque gives (no extra pull-down
+  from the screw or bolt as the part tries to lift).
+- Chatter, interrupted cuts against a part edge, and tapping are not modelled
+  separately: that is what the safety factor is for.
+
+The viewer shows the result at the top of the Issues tab and lets you change
+the setup under Setup > Workholding; the MCP server's `check_program` takes the
+same options as `workholding`.
 
 ## Configuration
 
@@ -294,7 +416,7 @@ pip install -e ".[mcp]"
 
 | Tool | What it does |
 |---|---|
-| `check_program` | Full collision check. Returns status, issues with lines and depths, interpreter messages, and the tool geometry with where each value came from. Takes `stock`, per-tool `tools` overrides and `resolution` |
+| `check_program` | Full collision check. Returns status, issues with lines and depths, interpreter messages, and the tool geometry with where each value came from. Takes `stock`, per-tool `tools` overrides, `resolution`, and `workholding` options (see [Workholding](#workholding)) |
 | `program_info` | What was read from comments and macro variables, with each value's line and text, without simulating. Pass a few comment lines as `gcode` to try detection settings |
 | `list_programs` | The programs in the `--programs` folder, as `path` values for the other tools |
 | `get_settings` / `update_settings` / `reset_settings` | View and change the server's saved settings, mainly comment detection (`comment_aliases`, `comment_rules`, `variable_rules`, `check.fuzz_threshold`) and tool defaults |

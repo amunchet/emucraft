@@ -11,17 +11,20 @@ worn-tool factor scales every load.
 
 The fixture holds by friction:
 
-* vise: the two jaw faces grip the part. Together they resist a force in
-  their plane (along the jaws or upwards) and a moment about the clamping
-  axis. The fixed jaw, the screw and the floor carry everything else.
-* clamps: toe clamps press the part onto the table. Friction under the part
-  and under the clamp tips resists sliding and turning, and the clamp forces
-  resist lifting and tipping over an edge of the part.
+* vise: the two jaw faces grip the part, 2 * friction * force between them,
+  against the force in their plane: along the jaws and upwards. A moment
+  about the clamping axis rocks the part over the floor (parallels) at the
+  far end of the jaws, so it adds to the upward force the jaws must hold.
+  The fixed jaw, the screw and the floor carry everything else.
+* clamps: toe clamps press the part onto the table over its supports.
+  Friction under the part and under the clamp tips resists sliding and
+  turning (combined linearly, F/Fmax + M/Mmax <= 1, which stays inside the
+  true friction limit), and the clamp forces resist lifting and tipping over
+  an edge of the part.
 
-Force and moment are combined linearly (F/Fmax + M/Mmax <= 1), which stays
-inside the true friction limit. Holding grows in proportion to the clamping
-force, so the smallest margin over the program gives the least torque that
-holds every cut with the required safety factor.
+The side force is taken in its worst direction. Holding grows in proportion
+to the clamping force, so the smallest margin over the program gives the
+least torque that holds every cut with the required safety factor.
 """
 
 from __future__ import annotations
@@ -417,6 +420,20 @@ def analyze(program: Program, tools: Dict[int, ToolSpec], stock: StockSpec, grid
         "required_force": None,
         "required_torque": None,
         "worst": None,
+        # the rest of the setup, as the options take it (program units)
+        "radial_ratio": spec.radial_ratio,
+        "axial_ratio": spec.axial_ratio,
+        "axis": spec.axis,
+        "force_per_torque": None if spec.force_per_torque is None else float(
+            f"{spec.force_per_torque * f_out / t_out:.9g}"),
+        "grip": spec.grip,
+        "jaw_width": spec.jaw_width,
+        "center": spec.center,
+        "clamps": [list(p) for p in spec.clamps],
+        "bolt": None if spec.bolt is None else spec.bolt / u,
+        "bolt_grade": spec.bolt_grade,
+        "nut_factor": spec.nut_factor,
+        "lever": spec.lever,
     }
     per_torque = spec.per_torque()
     applied = spec.force if spec.force is not None else (

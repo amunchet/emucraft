@@ -124,13 +124,16 @@ class App {
   }
 
   showStatus(r) {
-    const collisions = r.issues.filter(i => i.severity === 'error').length;
-    const warnings = r.issues.length - collisions;
-    this.setBadge(r.status, r.status === 'fail' ? `${collisions} collision${collisions === 1 ? '' : 's'}`
+    const holding = r.issues.filter(i => i.kind === 'workholding').length;
+    const collisions = r.issues.filter(i => i.severity === 'error').length - holding;
+    const warnings = r.issues.length - collisions - holding;
+    const failed = collisions ? `${collisions} collision${collisions === 1 ? '' : 's'}`
+      : holding ? 'Workholding fails' : 'Program errors';
+    this.setBadge(r.status, r.status === 'fail' ? failed
       : r.status === 'warn' ? (warnings ? `${warnings} warning${warnings === 1 ? '' : 's'}` : 'Passed with notes') : 'No collisions');
     const count = $('issue-count');
     count.textContent = r.issues.length ? String(r.issues.length) : '✓';
-    count.className = `count ${collisions ? '' : r.issues.length ? 'warn' : 'ok'}`;
+    count.className = `count ${collisions + holding ? '' : r.issues.length ? 'warn' : 'ok'}`;
   }
 
   // The display grid must fit the GPU's texture size; coarsen it if not.
@@ -301,11 +304,13 @@ class App {
     });
     renderSetup($('tab-setup'), r, {
       units: this.units, readOnly: !!EMBED, settings: this.settings,
+      materials: this.info?.workholding_materials, holdDefaults: this.info?.workholding_defaults,
       onApply: changes => {
         let next = {};
         if (changes) {
           next = { ...this.settings, ...changes, tools: { ...(this.settings.tools || {}) } };
           for (const [t, values] of Object.entries(changes.tools || {})) next.tools[t] = { ...(next.tools[t] || {}), ...values };
+          if (changes.workholding) next.workholding = { ...(this.settings.workholding || {}), ...changes.workholding };
         }
         this.analyze(this.source, true, next);
       },
