@@ -325,18 +325,19 @@ Each web app has its own Docker image, and none has authentication of its own - 
 | `moonshot` | `moonshot/Dockerfile` (repository root as context) | Moonshot's web page (`moonshot-web`) on port 8000, models and runs in the `moonshot-web` volume |
 | `laser` | `laser/Dockerfile` | the laser engraving simulator, a static build served by nginx on port 80 |
 | `laser-api` | `laser/Dockerfile.api` | the laser customer GLB API (`laser/server.mjs`) on port 8001; call it from the shop's backend, see [Customer GLB API](#customer-glb-api-laserservermjs) |
-| `moonshot-mcp` | the `moonshot` image | Moonshot's MCP server on port 8000 (`/mcp`), its own `moonshot-mcp` volume; only with `--profile moonshot-mcp` |
-| `emucraft-mcp` | the `emucraft` image | emucraft's MCP server (`emucraft mcp --http`) on port 8000, settings in the `emucraft-mcp` volume, programs from `/programs`; only with `--profile emucraft-mcp` |
-| `laser-mcp` | the `laser-api` image | the laser MCP server (`laser/mcp.mjs`) on port 8000; only with `--profile laser-mcp`, see [Laser MCP server](#laser-mcp-server-lasermcpmjs) |
+| `moonshot-mcp` | the `moonshot` image | Moonshot's MCP server on port 8000 (`/mcp`), its own `moonshot-mcp` volume |
+| `emucraft-mcp` | the `emucraft` image | emucraft's MCP server (`emucraft mcp --http`) on port 8000, settings in the `emucraft-mcp` volume, programs from `/programs` |
+| `laser-mcp` | the `laser-api` image | the laser MCP server (`laser/mcp.mjs`) on port 8000, templates in the `laser-templates` volume; see [Laser MCP server](#laser-mcp-server-lasermcpmjs) |
 
-The compose file joins an **external** Docker network (`emucraft` by default, override with `EMUCRAFT_NETWORK`) and publishes no ports:
+`docker-compose.yml` starts all seven. The four apps are in `docker-compose.apps.yml`, which it includes, for running them without the MCP servers. Both join an **external** Docker network (`emucraft` by default, override with `EMUCRAFT_NETWORK`) and publish no ports:
 
 ```bash
 docker network create emucraft   # once, if your Caddy stack doesn't already create it
-docker compose up -d --build                                            # emucraft, moonshot, laser, laser-api
-MOONSHOT_TOKEN=... docker compose --profile moonshot-mcp up -d --build  # also Moonshot's MCP server
-COMPOSE_PROFILES=moonshot-mcp,emucraft-mcp,laser-mcp docker compose up -d --build  # all three MCP servers
+docker compose up -d --build                                  # the apps and all three MCP servers
+docker compose -f docker-compose.apps.yml up -d --build       # the apps only
 ```
+
+The MCP servers reuse the apps' images, so `--build` matters after a pull: without it they keep running the old code.
 
 Then, in the Caddy stack (attached to the same network), serve all three on one host, each under its own path:
 
