@@ -405,10 +405,11 @@ Run it with `cd laser && npm install && node server.mjs`. It listens on `127.0.0
 
 With Docker, `docker compose up -d --build` also starts the `laser-api` container (built from `laser/Dockerfile.api`), capped at 4 GB of memory and 4 CPUs. Set `LASER_TOKEN` and `LASER_SECRET` in the environment that runs compose to pass them through.
 
-A render of the sample grip takes about 30 s of CPU and peaks at about 0.5 GB of memory. Call it from the shop's backend and pass the GLB on to the browser, or set `LASER_TOKEN`. Don't route it publicly without authentication. If the backend reaches it through Caddy:
+A render of the sample grip takes about 30 s of CPU and peaks at about 0.5 GB of memory. Call it from the shop's backend and pass the GLB on to the browser, or set `LASER_TOKEN`. Don't route it publicly without authentication. If the backend reaches it through Caddy, route only these two paths, since `/api/laser/templates` hands out the template files:
 
 ```
-handle /api/laser/* {
+@laser_api path /api/laser/info /api/laser/render
+handle @laser_api {
     reverse_proxy laser-api:8001
 }
 ```

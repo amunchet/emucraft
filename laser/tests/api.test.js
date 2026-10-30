@@ -275,6 +275,7 @@ describe('HTTP API', () => {
     expect(Buffer.compare(Buffer.from(await got.arrayBuffer()), data)).toBe(0);
     expect((await fetch(`${at}/nope`, auth)).status).toBe(404);
     expect((await fetch(`${at}/..%2Fsecret`, auth)).status).toBe(400);
+    expect((await fetch(`${at}/%E0`, auth)).status).toBe(400);
     expect((await fetch(`${at}/colt_python`, { ...auth, method: 'DELETE' })).status).toBe(405);
     api.close();
     fs.rmSync(dir, { recursive: true });

@@ -275,7 +275,7 @@ export function make_server({ jobs = 2, timeout_s = 300, max_mb = 64, token = ''
       if (token && !same(req.headers.authorization, auth)) return fail(out, 401, 'missing or wrong bearer token');
       if (read && !read[1]) return send(out, 200, JSON.stringify(list_templates(templates)), 'application/json');
       if (read) {
-        const t = template_files(templates, template_id(decodeURIComponent(read[1])))[0];
+        const t = template_files(templates, template_id(read[1]))[0];
         if (!t) return fail(out, 404, `unknown template '${read[1]}'`);
         out.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': fs.statSync(t.file).size, 'Cache-Control': 'no-store', 'X-Template-Format': t.format });
         return await pipeline(fs.createReadStream(t.file), out);

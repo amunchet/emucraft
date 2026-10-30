@@ -23,3 +23,8 @@ finding and uploading its file.
   token injected, and `/api/laser/render` stayed 404. In Chromium, the page's fetches listed the template, downloaded
   it and parsed it (284,600 triangles). Clicking through the picker itself wasn't tested, because WebGL isn't available
   in this sandbox.
+
+## 2026-10-30 01:50 CDT
+Fixes from self-review. The README's Caddy example for the shop's backend now routes only `/api/laser/info` and
+`/api/laser/render`. The old `/api/laser/*` would also have published the new template downloads. A malformed
+escape in a template id (`%E0`) is now a 400 instead of a 500, because ids are no longer URL-decoded (valid ids never need it).
