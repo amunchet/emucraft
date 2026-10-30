@@ -162,6 +162,7 @@ class CheckSpec:
     default_units: str = "inch"
     threads: Optional[int] = None
     fuzz_threshold: float = 0.85  # how close a comment label must be to an alias (1 = exact)
+    broken_tool: bool = True  # also sweep each holder over the stock its tool found at its start
 
 
 @dataclass

@@ -144,7 +144,7 @@ def test_tool_overrides(capsys):
                            "--tool", "*:holder_diameter=2,stickout=0.05")
     data = json.loads(out)
     assert code == 1
-    assert {i["kind"] for i in data["issues"]} == {"holder"}
+    assert {i["kind"] for i in data["issues"] if i["severity"] == "error"} == {"holder"}
     assert data["tools"]["20"]["stickout"] == 0.05
     assert data["tools"]["20"]["source"]["stickout"] == "override"
 

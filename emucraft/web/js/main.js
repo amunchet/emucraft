@@ -251,7 +251,7 @@ class App {
       colors[4 * i] = c[0]; colors[4 * i + 1] = c[1]; colors[4 * i + 2] = c[2]; colors[4 * i + 3] = 255;
     }
     for (const issue of this.report.issues) {
-      if (!['rapid-cut', 'spindle-off-cut', 'link-cut', 'shank', 'holder'].includes(issue.kind)) continue;
+      if (!['rapid-cut', 'spindle-off-cut', 'link-cut', 'shank', 'holder', 'broken-tool'].includes(issue.kind)) continue;
       const rgb = issue.severity === 'error' ? [255, 70, 70] : [245, 180, 60];
       for (let m = issue.moves[0]; m <= issue.moves[1] && m < n; m++) {
         colors[4 * m] = rgb[0]; colors[4 * m + 1] = rgb[1]; colors[4 * m + 2] = rgb[2];

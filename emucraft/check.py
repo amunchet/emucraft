@@ -21,6 +21,7 @@ from .config import find_config, load_config
 from .gcode import CYCLE, NOCUT, RAPID, SPINDLE, Interpreter, Message, Program
 from .kernel import EV_BODY, EV_FLUTE, EV_NOCUT_CUT, EV_RAPID_CUT, EV_SPINDLE_OFF_CUT, Sim, simplify
 from .model import (
+    SHAPE_IDS,
     Config,
     StockSpec,
     ToolSpec,
@@ -50,7 +51,7 @@ class Grid:
 class Issue:
     """One problem, possibly spanning a run of consecutive moves."""
 
-    kind: str  # rapid-cut, spindle-off-cut, link-cut, shank, holder, table, travel, tool
+    kind: str  # rapid-cut, spindle-off-cut, link-cut, shank, holder, broken-tool, table, travel, tool
     severity: str  # "error" | "warning"
     message: str
     first_move: int
@@ -416,14 +417,24 @@ def run_check(
             points, kflags, slots = program.points, flags, program.tool_slot
             first = None
         events = []
+        broken_runs = []  # holder hits per tool run, had its tool broken as the run began
+        broken = None  # the block a broken tool leaves uncut
         start = 0
         n = len(kflags)
         while start < n:
             end = start + 1
             while end < n and slots[end] == slots[start]:
                 end += 1
+            holder = _holder_body(slot_specs.get(slots[start])) if config.check.broken_tool else None
+            if holder is not None:
+                if broken is None:
+                    broken = Sim(sim.nx, sim.ny, sim.x0, sim.y0, sim.cell, sim.z_top, sim.z_bottom, tolerance)
+                broken.load_heights(sim.heights())
             res = sim.run(points, kflags, slots, start, end, threads=threads)
             events.extend(res.events)
+            if holder is not None:
+                broken_runs.append(_broken_tool_events(broken, slot_specs[slots[start]], holder, res.events,
+                                                         points, kflags, slots, start, end, threads))
             removed += res.volume
             dropped += res.dropped
             number = program.slot_tools[slots[start]] if slots[start] >= 0 else None
@@ -432,9 +443,11 @@ def run_check(
             if progress:
                 progress(end / n)
             start = end
+        if broken is not None:
+            broken.close()
         if first is not None:
             n_merged = len(first)
-            for ev in events:  # back to original move numbers
+            for ev in events + [ev for run in broken_runs for ev in run]:  # back to original move numbers
                 k = ev.move
                 ev.move = first[k]
                 ev.last = (first[k + 1] if k + 1 < n_merged else program.n_moves) - 1
@@ -442,6 +455,9 @@ def run_check(
         simplified = n
         issues.extend(_issues_from_events(events, program, slot_specs, units,
                                           link_severity=config.check.link_severity))
+        for run in broken_runs:
+            if run:
+                issues.append(_merge_issues(_issues_from_events(run, program, slot_specs, units, broken=True)))
         if dropped:
             messages.append(Message("warning", "events-truncated",
                                     f"{dropped} collision events were not recorded (too many)", None))
@@ -492,8 +508,50 @@ def _fmt(value: float, units: str) -> str:
     return f"{value:.4f} in" if units == "inch" else f"{value:.3f} mm"
 
 
+def _holder_body(spec: Optional[ToolSpec]) -> Optional[int]:
+    """Index of the holder among ``spec.bodies()``, if the holder is known."""
+    if spec is None:
+        return None
+    for j, body in enumerate(spec.bodies()):
+        if body[2] == "holder":
+            return j
+    return None
+
+
+def _broken_tool_events(broken: Sim, spec: ToolSpec, holder: int, events, points: array, flags: array,
+                        slots: array, start: int, end: int, threads: int) -> list:
+    """Holder hits if the tool of moves [start, end) breaks as they begin.
+
+    A broken tool cuts nothing, so its holder sweeps the block as the run
+    found it: ``broken`` holds that block, and the slot gets a cutter too thin
+    to remove material, carrying only the holder. Moves where the holder
+    already hits with an intact tool are left to the holder issue.
+    """
+    radius, bottom, _ = spec.bodies()[holder]
+    broken.set_tool(slots[start], SHAPE_IDS["flat"], broken.cell * 1e-6, bodies=[(radius, bottom)])
+    hit = {ev.move for ev in events if ev.kind == EV_BODY and ev.body == holder}
+    out = []
+    for ev in broken.run(points, flags, slots, start, end, threads=threads).events:
+        if ev.kind == EV_BODY and ev.move not in hit:
+            ev.body = holder
+            out.append(ev)
+    return out
+
+
+def _merge_issues(issues: List[Issue]) -> Issue:
+    """One issue spanning ``issues``, at the deepest of them."""
+    out = min(issues, key=lambda i: i.first_move)
+    worst = max(issues, key=lambda i: i.depth)
+    last = max(issues, key=lambda i: i.last_move)
+    out.last_move, out.last_line = last.last_move, last.last_line
+    out.depth, out.position, out.message = worst.depth, worst.position, worst.message
+    out.volume = sum(i.volume for i in issues)
+    out.moves = sum(i.moves for i in issues)
+    return out
+
+
 def _issues_from_events(events, program: Program, specs: Dict[int, ToolSpec], units: str,
-                        link_severity: str = "warning") -> List[Issue]:
+                        link_severity: str = "warning", broken: bool = False) -> List[Issue]:
     labels = {EV_RAPID_CUT: "rapid-cut", EV_SPINDLE_OFF_CUT: "spindle-off-cut",
               EV_NOCUT_CUT: "link-cut", EV_FLUTE: "shank"}
     open_: Dict[Tuple[str, int], Issue] = {}
@@ -506,6 +564,8 @@ def _issues_from_events(events, program: Program, specs: Dict[int, ToolSpec], un
             kind = bodies[ev.body][2] if 0 <= ev.body < len(bodies) else "holder"
         else:
             kind = labels.get(ev.kind, "collision")
+        if broken:
+            kind = "broken-tool"
         key = (kind, ev.body if ev.kind == EV_BODY else -1)
         line = program.line[ev.move]
         last = max(ev.move, ev.last)  # an event on a merged run covers all of it
@@ -527,6 +587,8 @@ def _issues_from_events(events, program: Program, specs: Dict[int, ToolSpec], un
                     depth=ev.depth, volume=ev.volume, tool=number, moves=last - ev.move + 1)
         if ev.kind == EV_NOCUT_CUT:
             cur.severity = link_severity
+        if broken:
+            cur.severity = "warning"
         open_[key] = cur
     out.extend(open_.values())
     for issue in out:
@@ -550,6 +612,8 @@ def _event_message(issue: Issue, program: Program, specs: Dict[int, ToolSpec], u
         return f"Material reaches {d} above the flute length{flute} of {tool}: the shank rubs"
     if issue.kind == "holder":
         return f"Tool holder of {tool} hits the stock ({d} interference)"
+    if issue.kind == "broken-tool":
+        return f"If {tool} breaks as its run starts, its holder hits the uncut stock ({d} interference)"
     return f"Collision ({d})"
 
 
