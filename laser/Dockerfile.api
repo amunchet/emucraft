@@ -7,7 +7,9 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 COPY server.mjs mcp.mjs ./
 COPY src/ src/
-ENV HOST=0.0.0.0 PORT=8001
+# templates (proprietary parts) live in a volume here; owned by node so a fresh named volume is writable
+RUN mkdir -m 700 /templates && chown node:node /templates
+ENV HOST=0.0.0.0 PORT=8001 LASER_TEMPLATES=/templates
 USER node
 EXPOSE 8001
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s \

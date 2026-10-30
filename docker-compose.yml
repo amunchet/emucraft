@@ -61,6 +61,8 @@ services:
     environment:
       - LASER_TOKEN=${LASER_TOKEN:-}
       - LASER_SECRET=${LASER_SECRET:-}
+    volumes:
+      - laser-templates:/templates:ro   # renders templates by id; laser-mcp uploads them
     networks:
       - emucraft
 
@@ -109,7 +111,7 @@ services:
       - emucraft
 
   # The laser MCP server (laser/mcp.mjs): the laser-api image, run as its own service. It shares LASER_SECRET with
-  # laser-api, so a part gets the same stand-in size from both.
+  # laser-api, so a part gets the same stand-in size from both. Templates uploaded here are kept in laser-templates.
   laser-mcp:
     image: emucraft-laser-api:latest
     container_name: laser-mcp
@@ -128,6 +130,8 @@ services:
       - PORT=8000
       - LASER_TOKEN=${LASER_MCP_TOKEN:-}
       - LASER_SECRET=${LASER_SECRET:-}
+    volumes:
+      - laser-templates:/templates
     networks:
       - emucraft
 
@@ -135,6 +139,7 @@ volumes:
   moonshot-web:
   moonshot-mcp:
   emucraft-mcp:
+  laser-templates:   # proprietary template parts: never bind-mount this into a served directory
 
 networks:
   emucraft:
