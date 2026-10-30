@@ -398,6 +398,7 @@ Run it with `cd laser && npm install && node server.mjs`. It listens on `127.0.0
 - `LASER_MAX_MB`: request body cap (default 64)
 - `LASER_TOKEN`: if set, requests must send `Authorization: Bearer <token>`
 - `LASER_SECRET`: keys the per-part size factor (below). If unset, a random one is made at each start, so a restart gives the same part a new factor.
+- `LASER_TEMPLATES`: the template directory (default `templates`; `/templates` in the image), see [Templates](#templates)
 
 With Docker, `docker compose up -d --build` also starts the `laser-api` container (built from `laser/Dockerfile.api`), capped at 4 GB of memory and 4 CPUs. Set `LASER_TOKEN` and `LASER_SECRET` in the environment that runs compose to pass them through.
 
@@ -429,6 +430,7 @@ Guard rails:
 ```
 
 Field defaults:
+- **`model`:** either the part itself (`format` and `data`) or a stored template, `{ "template": "colt_python" }`.
 - **Placement:** the same frame and numbers the app's Alignment panel shows (model centred in XY, lowest point at Z = 0). If width and height are both left out, one pixel equals one spot. If only one is given, the other keeps the image's aspect ratio.
 - **`laser`:** any subset of the simulator's laser parameters.
 - **`material`:** a preset, optionally overriding `color`, `mark`, `rough`, `metal`, `mark_rough` and `mark_metal`, or supplying a custom base `texture` (base64 image).
@@ -464,9 +466,28 @@ The same jobs as MCP tools, for an agent, over streamable HTTP at `/mcp` (statel
 | Tool | What it does |
 |---|---|
 | `laser_info` | The material presets, the laser defaults and the option defaults, as `GET /api/laser/info` |
-| `render_glb` | A job, with the model and image as `model_format`, `model_data` and `image_data` (base64) and the other fields as above. Returns the summary and the GLB as an embedded `model/gltf-binary` resource. Bad jobs come back as tool errors with the reason |
+| `render_glb` | A job, with the model and image as `model_format`, `model_data` and `image_data` (base64), or `template` in place of the model, and the other fields as above. Returns the summary and the GLB as an embedded `model/gltf-binary` resource. Bad jobs come back as tool errors with the reason |
+| `list_templates` | The stored templates: id, format, file size and upload time |
+| `upload_template` | Store a part (`id`, `format`, base64 `data`) as a template; `replace: true` overwrites an existing id |
+| `delete_template` | Delete a template |
 
-Run it with `cd laser && node mcp.mjs` (port 8002) or as the `laser-mcp` service. It takes the API's environment variables (`LASER_TOKEN` guards `/mcp`), and should get the API's `LASER_SECRET` so a part gets the same stand-in size from both. Tool calls carry the files in base64, so the request cap `LASER_MAX_MB` applies to the whole call.
+Run it with `cd laser && node mcp.mjs` (port 8002) or as the `laser-mcp` service. It takes the API's environment variables (`LASER_TOKEN` guards `/mcp`), and should get the API's `LASER_SECRET` so a part gets the same stand-in size from both. Tool calls carry the files in base64, so the request cap `LASER_MAX_MB` applies to the whole call. Here it defaults to 256 MB (the API keeps 64), for big template parts, and a request may take up to 30 minutes to arrive. A 256 MB STL is about 5 million triangles; raise `LASER_MAX_MB` for more, but a base64 tool call briefly holds about four times its size in memory and the container is capped at 4 GB, so send big parts by `PUT` instead.
+
+#### Templates
+Templates are proprietary master parts, such as a 1911 frame or a Colt Python, stored once and engraved by id so the model doesn't travel with every job. They can be uploaded, replaced and deleted, never downloaded:
+- No tool or route reads a template back. `list_templates` shows only the id, format, file size and upload time, with no dimensions or geometry.
+- A render of a template is always the stand-in from [What the file contains](#customer-glb-api-laserservermjs): `true_scale` is refused for templates.
+- Files are written `0600` in a `0700` directory, ids are limited to `a-z 0-9 _ -` so they can't leave it, and an upload is only stored once it parses as a model with triangles. `templates` is in `.gitignore` and `.dockerignore`.
+- With compose, they live in the `laser-templates` volume: `laser-mcp` mounts it read-write, `laser-api` read-only, so the shop's backend can render `{ "model": { "template": "..." } }` but not change them. Keep the volume out of any directory a web server serves, and out of backups that get shared.
+
+A part too big for a tool call goes up as the raw file with the MCP server's bearer token (Caddy's, in production):
+
+```
+curl -X PUT --data-binary @colt_python.stl -H "Authorization: Bearer $TOKEN" \
+    https://emu.north.altamontco.com/laser-mcp/templates/colt_python.stl        # ?replace=1 to overwrite
+```
+
+`GET` on that path is `405`: there is no way to fetch it. Anyone with an MCP token can upload or delete templates, so mint `laser-mcp` tokens only for people trusted with them.
 
 Limitations and next steps: STEP/IGES import (would need occt-import-js), lasers that don't fire straight down or rotary axes, heightmap export, and splitting the 720 kB bundle into smaller chunks.
 

@@ -4,7 +4,7 @@
 //   GET  /api/laser/info    presets, laser defaults and option defaults
 //   POST /api/laser/render  JSON job -> model/gltf-binary (summary in the X-Laser-Summary header)
 //
-// Job: { model: { format: 'stl' | 'obj', data: base64 }, image: { data: base64 PNG or JPEG },
+// Job: { model: { format: 'stl' | 'obj', data: base64 } | { template: id }, image: { data: base64 PNG or JPEG },
 //   placement?: { cx, cy, angle_deg, width_mm, height_mm }, laser?: { ...DEFAULT_LASER }, supersample?,
 //   material?: { preset, color, mark, rough, metal, mark_rough, mark_metal, tex_scale_mm, texture: base64 },
 //   output?: { mesh_mm, max_texture, true_scale } }
@@ -19,9 +19,16 @@
 // stand-in, so the real size is known only to within ±10 %, and rendering the same part again does not narrow that
 // down. Set LASER_SECRET to keep the factor across restarts; unset, it is new per process.
 //
+// Templates are proprietary master parts (a 1911 frame, a Colt Python) kept in LASER_TEMPLATES and engraved by id.
+// They go in and can be deleted (the MCP server, mcp.mjs) but never come back out: no route or tool reads one, a
+// render of one is always the stand-in (true_scale is refused), and nothing reports their size.
+//
 // Run: node server.mjs   (env: HOST=127.0.0.1, PORT=8001, LASER_JOBS=2 concurrent jobs, LASER_TIMEOUT_S=300,
-//   LASER_MAX_MB=64 request body cap, LASER_TOKEN unset = no auth, LASER_SECRET unset = random per process)
+//   LASER_MAX_MB=64 request body cap, LASER_TOKEN unset = no auth, LASER_SECRET unset = random per process,
+//   LASER_TEMPLATES=templates)
 import http from 'node:http';
+import fs from 'node:fs';
+import path from 'node:path';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { Worker, parentPort, workerData } from 'node:worker_threads';
 import { fileURLToPath } from 'node:url';
@@ -59,6 +66,59 @@ const b64 = (v, what) => {
 // the part's size factor: deterministic per (secret, geometry), uniform in [0.9, 1.1]
 export const size_jitter = (secret, positions) =>
   0.9 + 0.2 * (createHmac('sha256', secret).update(Buffer.from(positions.buffer, positions.byteOffset, positions.byteLength)).digest().readUInt32BE(0) / 2 ** 32);
+
+// Model bytes -> its triangle soup; a bad or empty model is a 400.
+export function load_model(format, data) {
+  let root;
+  try {
+    if (format === 'stl') root = new THREE.Mesh(new STLLoader().parse(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)));
+    else if (format === 'obj') root = new OBJLoader().parse(data.toString('utf8'));
+  } catch (err) {
+    throw bad(`model could not be read: ${err.message}`);
+  }
+  if (!root) throw bad("model.format must be 'stl' or 'obj'");
+  const positions = triangle_soup(root);
+  if (!positions.length) throw bad('model has no triangles');
+  if (!positions.every(Number.isFinite)) throw bad('model has non-finite vertices');
+  return positions;
+}
+
+// Templates: <dir>/<id>.stl or .obj, readable only by this user. Ids are checked, so they never leave the directory.
+const template_id = (id) => {
+  if (typeof id !== 'string' || !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(id)) throw bad('template id must be 1-64 of a-z, 0-9, _ and -, starting with a letter or digit');
+  return id;
+};
+const template_files = (dir, id) => ['stl', 'obj'].map((format) => ({ format, file: path.join(dir, `${id}.${format}`) })).filter((t) => fs.existsSync(t.file));
+
+// What the templates are, without anything from inside them: id, format, file size, upload time.
+export function list_templates(dir) {
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir).map((name) => /^([a-z0-9][a-z0-9_-]{0,63})\.(stl|obj)$/.exec(name)).filter(Boolean).map(([name, id, format]) => {
+    const st = fs.statSync(path.join(dir, name));
+    return { id, format, bytes: st.size, uploaded: st.mtime.toISOString() };
+  }).sort((a, b) => a.id.localeCompare(b.id));
+}
+
+// Store a template once it reads as a model. An existing id is kept unless `replace`; the file is swapped in whole.
+export function save_template(dir, id, format, data, replace = false) {
+  template_id(id);
+  const triangles = load_model(format, data).length / 9, old = template_files(dir, id);
+  if (old.length && !replace) throw Object.assign(new Error(`template '${id}' already exists (pass replace to overwrite it)`), { status: 409 });
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const tmp = path.join(dir, `.${id}.${randomBytes(6).toString('hex')}.tmp`);
+  fs.writeFileSync(tmp, data, { mode: 0o600 });
+  fs.renameSync(tmp, path.join(dir, `${id}.${format}`));
+  for (const t of old) if (t.format !== format) fs.rmSync(t.file);
+  return { id, format, bytes: data.length, triangles, replaced: old.length > 0 };
+}
+
+export function delete_template(dir, id) {
+  const old = template_files(dir, template_id(id));
+  if (!old.length) throw Object.assign(new Error(`unknown template '${id}'`), { status: 404 });
+  for (const t of old) fs.rmSync(t.file);
+  return { id, deleted: true };
+}
+
 const linear = (hex, what) => {
   if (!/^#[0-9a-f]{6}$/i.test(hex)) throw bad(`${what} must be a #rrggbb colour`);
   return new THREE.Color(hex).toArray(); // three's working space is linear sRGB
@@ -81,23 +141,20 @@ function decode_image(buf, what) {
 }
 
 // The whole job, inside a worker thread: validate, load, simulate, build the GLB.
-async function render(body, secret) {
+async function render(body, secret, templates) {
   let job;
   try { job = JSON.parse(Buffer.from(body).toString('utf8')); } catch (err) { throw bad(`body is not JSON: ${err.message}`); }
   only(job, ['model', 'image', 'placement', 'laser', 'supersample', 'material', 'output'], 'job');
 
-  const model = only(job.model, ['format', 'data'], 'model'), data = b64(model.data, 'model.data');
-  let root;
-  try {
-    if (model.format === 'stl') root = new THREE.Mesh(new STLLoader().parse(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)));
-    else if (model.format === 'obj') root = new OBJLoader().parse(data.toString('utf8'));
-  } catch (err) {
-    throw bad(`model could not be read: ${err.message}`);
-  }
-  if (!root) throw bad("model.format must be 'stl' or 'obj'");
-  const positions = triangle_soup(root);
-  if (!positions.length) throw bad('model has no triangles');
-  if (!positions.every(Number.isFinite)) throw bad('model has non-finite vertices');
+  const model = only(job.model, ['format', 'data', 'template'], 'model');
+  let positions;
+  if (model.template !== undefined) {
+    if (model.format !== undefined || model.data !== undefined) throw bad('model takes either a template or format and data, not both');
+    if (job.output?.true_scale === true) throw bad('output.true_scale is not available for templates');
+    const t = template_files(templates, template_id(model.template))[0];
+    if (!t) throw bad(`unknown template '${model.template}'`);
+    positions = load_model(t.format, fs.readFileSync(t.file));
+  } else positions = load_model(model.format, b64(model.data, 'model.data'));
   centre_model(positions, 'model');
   const jitter = job.output?.true_scale === true ? 1 : size_jitter(secret, positions);
   for (let k = 0; k < positions.length; k++) positions[k] *= jitter; // from here on, the stand-in part
@@ -164,7 +221,7 @@ async function render(body, secret) {
 // Inside a job thread: run the job and post the result back.
 if (workerData?.laser_job) {
   try {
-    const { glb, summary } = await render(workerData.body, workerData.secret);
+    const { glb, summary } = await render(workerData.body, workerData.secret, workerData.templates);
     parentPort.postMessage({ ok: true, glb, summary }, [glb.buffer]);
   } catch (err) {
     parentPort.postMessage({ ok: false, status: err.status || 500, message: err.message || String(err) });
@@ -173,8 +230,8 @@ if (workerData?.laser_job) {
 
 // Run a job (the JSON body, as bytes it may take over) in its own worker thread -> { glb, summary }. Errors carry the
 // HTTP status: 400 for a bad job, 504 past `timeout_s`, 499 once `signal` aborts (the caller has gone away).
-export const run_job = (body, { secret, timeout_s = 300, signal }) => new Promise((resolve, reject) => {
-  const w = new Worker(fileURLToPath(import.meta.url), { workerData: { laser_job: true, body, secret }, transferList: [body.buffer] });
+export const run_job = (body, { secret, templates, timeout_s = 300, signal }) => new Promise((resolve, reject) => {
+  const w = new Worker(fileURLToPath(import.meta.url), { workerData: { laser_job: true, body, secret, templates }, transferList: [body.buffer] });
   const stop = (err) => { clearTimeout(timer); signal?.removeEventListener('abort', gone); w.terminate(); reject(err); };
   const gone = () => stop(Object.assign(new Error('client went away'), { status: 499 }));
   const timer = setTimeout(() => stop(Object.assign(new Error(`job took longer than ${timeout_s} s`), { status: 504 })), timeout_s * 1000);
@@ -189,13 +246,13 @@ export const info = () => ({ presets: Object.fromEntries(Object.entries(PRESETS)
 
 // HTTP server; jobs beyond `jobs` concurrent ones get 503. A job's slot is held from before its body is read until
 // it ends, and a job whose client has gone away is stopped.
-export function make_server({ jobs = 2, timeout_s = 300, max_mb = 64, token = '', secret = randomBytes(32) } = {}) {
+export function make_server({ jobs = 2, timeout_s = 300, max_mb = 64, token = '', secret = randomBytes(32), templates = 'templates' } = {}) {
   const max_body = max_mb * 1024 * 1024, auth = Buffer.from(`Bearer ${token}`);
   let running = 0;
   const run = (body, out) => {
     const gone = new AbortController();
     out.on('close', () => gone.abort());
-    return run_job(body, { secret, timeout_s, signal: gone.signal });
+    return run_job(body, { secret, templates, timeout_s, signal: gone.signal });
   };
   const send = (out, status, body, type, extra = {}) => {
     out.writeHead(status, { 'Content-Type': type, 'Content-Length': Buffer.byteLength(body), 'Cache-Control': 'no-store', ...extra });
@@ -236,5 +293,5 @@ export function make_server({ jobs = 2, timeout_s = 300, max_mb = 64, token = ''
 
 if (!workerData?.laser_job && process.argv[1] === fileURLToPath(import.meta.url)) {
   const env = process.env, host = env.HOST || '127.0.0.1', port = Number(env.PORT || 8001);
-  make_server({ jobs: Number(env.LASER_JOBS || 2), timeout_s: Number(env.LASER_TIMEOUT_S || 300), max_mb: Number(env.LASER_MAX_MB || 64), token: env.LASER_TOKEN || '', ...(env.LASER_SECRET && { secret: env.LASER_SECRET }) }).listen(port, host, () => console.log(`laser API on http://${host}:${port}/api/laser/info`));
+  make_server({ jobs: Number(env.LASER_JOBS || 2), timeout_s: Number(env.LASER_TIMEOUT_S || 300), max_mb: Number(env.LASER_MAX_MB || 64), token: env.LASER_TOKEN || '', templates: env.LASER_TEMPLATES || 'templates', ...(env.LASER_SECRET && { secret: env.LASER_SECRET }) }).listen(port, host, () => console.log(`laser API on http://${host}:${port}/api/laser/info`));
 }
