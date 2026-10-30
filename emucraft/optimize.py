@@ -29,7 +29,7 @@ from bisect import bisect_left, bisect_right
 from dataclasses import asdict, dataclass, field, fields
 from typing import Dict, List, Optional, Tuple
 
-from .check import choose_cell, interpreter_for
+from .check import choose_cell, fine_path, interpreter_for
 from .gcode import EDIT_FEED, EDIT_LOCKED, EDIT_NONE, RAPID, SPINDLE, Message, Program, split_comments
 from .kernel import Sim
 from .model import Config, resolve_stock, resolve_tools, unit_factor
@@ -247,24 +247,7 @@ def optimize(program: Program, config: Optional[Config] = None, spec: Optional[O
     # ---- fine path: cutting moves split into short pieces
     min_d = min(t.diameter for t in slot_specs.values())
     step = max(min_d / 4.0, 1e-6)
-    P = program.points
-    fpts = array("d", P[0:3])
-    fflags, ftools, fparent = array("i"), array("i"), array("i")
-    for i in range(program.n_moves):
-        f = program.flags[i]
-        j = 3 * i
-        x0, y0, z0, x1, y1, z1 = P[j], P[j + 1], P[j + 2], P[j + 3], P[j + 4], P[j + 5]
-        length = math.sqrt((x1 - x0) ** 2 + (y1 - y0) ** 2 + (z1 - z0) ** 2)
-        k = 1 if (f & RAPID or length <= step) else int(math.ceil(length / step))
-        for m in range(1, k + 1):
-            t = m / k
-            if m == k:
-                fpts.extend((x1, y1, z1))
-            else:
-                fpts.extend((x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, z0 + (z1 - z0) * t))
-            fflags.append(f)
-            ftools.append(program.tool_slot[i] if program.tool_slot[i] in slot_specs else -1)
-            fparent.append(i)
+    fpts, fflags, ftools, fparent = fine_path(program, {slot: step for slot in slot_specs})
     nf = len(fflags)
 
     # ---- simulate to measure the load on every piece

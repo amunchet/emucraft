@@ -92,6 +92,7 @@ class CheckResult:
     flags: array
     sim: Optional[Sim] = None
     initial_heights: Optional[array] = None  # starting stock of a chained check
+    workholding: Optional[dict] = None  # see workholding.analyze
 
     @property
     def errors(self) -> List[Issue]:
@@ -106,12 +107,15 @@ class CheckResult:
         return "pass"
 
     def summary(self) -> str:
-        collisions = len(self.errors)
-        warnings = len(self.issues) - collisions
+        holding = sum(1 for i in self.issues if i.kind == "workholding")
+        collisions = len(self.errors) - holding
+        warnings = len(self.issues) - collisions - holding
         msg_err = sum(1 for m in self.messages if m.level == "error")
         msg_warn = sum(1 for m in self.messages if m.level == "warning")
         parts = []
         parts.append(f"{collisions} collision{'s' if collisions != 1 else ''}")
+        if holding:
+            parts.append(f"{holding} workholding failure{'s' if holding != 1 else ''}")
         if warnings:
             parts.append(f"{warnings} warning{'s' if warnings != 1 else ''}")
         if msg_err:
@@ -144,6 +148,7 @@ class CheckResult:
                 "table_z": self.stats.get("table_z"),
             },
             "grid": self.grid.to_dict() if self.grid else None,
+            "workholding": self.workholding,
             "stats": self.stats,
             "timing": self.timing,
         }
@@ -223,6 +228,33 @@ def choose_cell(stock: StockSpec, config: Config, units: str, tools: Dict[int, T
     return _nice(cell)
 
 
+def fine_path(program: Program, steps: Dict[int, float]) -> Tuple[array, array, array, array]:
+    """The path with every feed move split into pieces no longer than the step
+    of its tool slot: (points, flags, tool slots, parent move). Moves of slots
+    without a step keep slot -1, so the kernel leaves them out."""
+    P = program.points
+    fpts = array("d", P[0:3])
+    fflags, ftools, fparent = array("i"), array("i"), array("i")
+    for i in range(program.n_moves):
+        f = program.flags[i]
+        slot = program.tool_slot[i]
+        step = steps.get(slot)
+        j = 3 * i
+        x0, y0, z0, x1, y1, z1 = P[j], P[j + 1], P[j + 2], P[j + 3], P[j + 4], P[j + 5]
+        length = math.sqrt((x1 - x0) ** 2 + (y1 - y0) ** 2 + (z1 - z0) ** 2)
+        k = 1 if (f & RAPID or step is None or length <= step) else int(math.ceil(length / step))
+        for m in range(1, k + 1):
+            t = m / k
+            if m == k:
+                fpts.extend((x1, y1, z1))
+            else:
+                fpts.extend((x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, z0 + (z1 - z0) * t))
+            fflags.append(f)
+            ftools.append(slot if step is not None else -1)
+            fparent.append(i)
+    return fpts, fflags, ftools, fparent
+
+
 def trim_to_stock(sim: Sim, stock: StockSpec) -> None:
     """The grid overhangs the stock by up to a cell; cells whose centers fall
     outside the stock box start without material."""
@@ -276,6 +308,7 @@ def run_check(
     cell: Optional[float] = None,
     table_z: Optional[float] = None,
     link_feed: Optional[float] = None,
+    workholding: Optional[Dict[str, object]] = None,
     threads: Optional[int] = None,
     keep_sim: bool = False,
     previous: Optional["CheckResult"] = None,
@@ -285,7 +318,8 @@ def run_check(
     """Simulate an interpreted program and collect every issue.
 
     ``stock``, ``cell``, ``table_z`` and ``link_feed`` override the
-    configuration and are in program units.
+    configuration and are in program units, as are the ``workholding``
+    options laid over the configuration's (see workholding.py).
 
     ``previous`` chains programs: this one starts from the stock the previous
     check (run with ``keep_sim=True``) left behind, on the same grid. Its
@@ -312,6 +346,14 @@ def run_check(
     if chain_note is not None:
         messages.append(chain_note)
     tools = resolve_tools(program, config, overrides)
+    hold = None
+    if config.workholding or workholding:
+        from .workholding import analyze, hold_spec
+
+        try:
+            hold = hold_spec(config, units, workholding)
+        except ValueError as exc:
+            messages.append(Message("error", "workholding", str(exc), None))
 
     flags = array("i", program.flags)
     if link_feed is None and config.check.link_feed:
@@ -366,7 +408,9 @@ def run_check(
         else:
             slot_specs[slot] = spec
 
-    initial_heights = None
+    initial_heights = start_heights = None
+    hold_report = None
+    hold_time = 0.0
     if stock is not None:
         if previous is not None:
             grid = previous.grid
@@ -389,8 +433,9 @@ def run_check(
             # slots belong to programs: never cut with the previous program's tools
             for slot in range(max(len(previous.program.slot_tools), len(program.slot_tools))):
                 sim.clear_tool(slot)
-            if keep_initial:
-                initial_heights = array("f", sim.heights())
+            if keep_initial or hold is not None:
+                start_heights = array("f", sim.heights())
+                initial_heights = start_heights if keep_initial else None
         else:
             sim = Sim(grid.nx, grid.ny, stock.xmin, stock.ymin, cell, stock.zmax, stock.zmin, tolerance)
             trim_to_stock(sim, stock)
@@ -445,6 +490,17 @@ def run_check(
         if dropped:
             messages.append(Message("warning", "events-truncated",
                                     f"{dropped} collision events were not recorded (too many)", None))
+        if hold is not None:
+            th = time.perf_counter()
+            try:
+                found, notes, hold_report = analyze(program, slot_specs, stock, grid, hold, start_heights,
+                                                    threads)
+            except ValueError as exc:
+                messages.append(Message("error", "workholding", str(exc), None))
+            else:
+                issues.extend(found)
+                messages.extend(notes)
+            hold_time = time.perf_counter() - th
 
     issues.extend(_path_issues(program, flags, table_z, config, cf, tolerance, units))
     for slot, problems in bad_tools.items():
@@ -481,11 +537,13 @@ def run_check(
         stats["stock_volume"] = stock_volume
         stats["remaining_volume"] = sim.volume()
     timing = {"simulate": kernel_time, "check": time.perf_counter() - t0}
+    if hold is not None:
+        timing["workholding"] = hold_time
     if not keep_sim and sim is not None:
         sim.close()
         sim = None
     return CheckResult(program, config, stock, tools, grid, issues, messages, stats, timing, flags, sim,
-                       initial_heights)
+                       initial_heights, hold_report)
 
 
 def _fmt(value: float, units: str) -> str:

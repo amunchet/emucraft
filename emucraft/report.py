@@ -68,6 +68,38 @@ def format_text(result: CheckResult, verbose: bool = False) -> str:
             where = f"line {m.line + 1}" if m.line is not None else "program"
             times = f" (x{m.count})" if m.count > 1 else ""
             out.append(f"  {_MARK.get(m.level, '-')} {where:<12} {m.text}{times}")
+    w = result.workholding
+    if w:
+        fu, tu = w["units"]["force"], w["units"]["torque"]
+        material = w["material"] or f"kc1 {w['kc1']:g} N/mm^2, mc {w['mc']:g}"
+        out.append("")
+        out.append(f"Workholding: {w['fixture']}, {material}, worn tool x{w['wear_factor']:g}, "
+                   f"safety factor {w['safety_factor']:g}, friction {w['friction']:g}")
+        worst = w["worst"]
+        if worst is None:
+            out.append("  no cut loads the part")
+        else:
+            out.append(
+                f"  weakest cut: line {worst['line']}, T{worst['tool']} {_len(worst['axial_depth'], u)} deep x "
+                f"{_len(worst['radial_width'], u)} wide at F{worst['feed']:g} S{worst['rpm']:g}: "
+                f"{worst['side_force']:.0f} {fu} sideways, {worst['lift']:.0f} {fu} lift; the part {worst['mode']}")
+            if w["force"] is not None:
+                given = f"{w['torque']:g} {tu} ({w['force']:.0f} {fu})" if w["torque"] else f"{w['force']:.0f} {fu}"
+                if w["margin"] is None:
+                    out.append(f"  {given} holds every cut")
+                elif w["margin"] >= w["safety_factor"]:
+                    out.append(f"  {given} holds every cut with margin {w['margin']:.2f}x "
+                               f"(needs {w['safety_factor']:g}x)")
+                else:
+                    out.append(f"  {given} is NOT enough: margin {w['margin']:.2f}x, needs {w['safety_factor']:g}x")
+            if w["required_force"] is None:
+                out.append("  no clamping force holds the part")
+            else:
+                need = f"{w['required_force']:.0f} {fu}"
+                if w["required_torque"] is not None:
+                    need = f"{w['required_torque']:.1f} {tu} ({need})"
+                limit = f"; the fixture takes up to {w['max_torque']:.0f} {tu}" if w["max_torque"] else ""
+                out.append(f"  needs at least {need}{limit}")
     st = result.stats
     out.append("")
     out.append(

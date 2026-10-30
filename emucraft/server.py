@@ -89,6 +89,9 @@ def apply_settings(config: Config, settings: Optional[dict]):
         overrides[number] = clean
     if overrides:
         kwargs["overrides"] = overrides
+    hold = {k: v for k, v in (settings.get("workholding") or {}).items() if v is not None and v != ""}
+    if hold:
+        kwargs["workholding"] = hold
     return config, kwargs
 
 

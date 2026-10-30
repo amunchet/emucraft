@@ -173,6 +173,7 @@ class Config:
     tools: Dict[int, Dict[str, object]] = field(default_factory=dict)
     default_tool: Dict[str, object] = field(default_factory=dict)
     optimize: Dict[str, object] = field(default_factory=dict)
+    workholding: Dict[str, object] = field(default_factory=dict)  # see workholding.py
     comment_rules: List[Tuple[str, str]] = field(default_factory=list)
     variable_rules: Dict[int, str] = field(default_factory=dict)
     comment_aliases: Dict[str, List[str]] = field(default_factory=dict)  # replaces defaults per target
