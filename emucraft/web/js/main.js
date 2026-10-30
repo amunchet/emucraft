@@ -123,6 +123,22 @@ class App {
     this.onAnalysis(payload, keepView, initial);
   }
 
+  // Fixture meshes as they were checked; they inflate after the rest of the scene is up.
+  async loadFixtures(payload) {
+    for (const f of payload.fixtures || []) {
+      const tris = await inflateTyped(f.triangles_gz, Float32Array);
+      if (this.payload !== payload) return; // a newer analysis replaced this one
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.BufferAttribute(tris, 3));
+      geometry.computeVertexNormals();
+      const material = new THREE.MeshStandardMaterial({ color: 0x8a96a6, metalness: 0.3, roughness: 0.6, side: THREE.DoubleSide });
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.name = f.name;
+      this.fixtures.add(mesh);
+      this.viewer.dirty = true;
+    }
+  }
+
   showStatus(r) {
     const collisions = r.issues.filter(i => i.severity === 'error').length;
     const warnings = r.issues.length - collisions;
@@ -202,6 +218,11 @@ class App {
     this.toolModels.forEach(m => { m.visible = false; this.toolGroup.add(m); });
     this.toolGroup.visible = $('show-tool').checked;
     world.add(this.toolGroup);
+    this.fixtures = new THREE.Group();
+    this.fixtures.visible = $('show-fixtures').checked;
+    world.add(this.fixtures);
+    $('show-fixtures').parentElement.hidden = !payload.fixtures?.length;
+    this.loadFixtures(payload);
     this.buildMarkers();
 
     this.viewer.setHelpers(bounds, r.machine.table_z);
@@ -230,6 +251,11 @@ class App {
     if (this.stock) { world.remove(this.stock.group); this.stock.dispose(); this.stock = null; }
     if (this.toolpath) { world.remove(this.toolpath.object); this.toolpath.dispose(); this.toolpath = null; }
     if (this.toolGroup) { world.remove(this.toolGroup); this.toolModels.forEach(disposeTool); this.toolGroup = null; }
+    if (this.fixtures) {
+      world.remove(this.fixtures);
+      this.fixtures.children.forEach(m => { m.geometry.dispose(); m.material.dispose(); });
+      this.fixtures = null;
+    }
     for (const m of [...this.viewer.markers.children]) this.viewer.markers.remove(m);
     this.player = null;
     this.display = null;
@@ -645,6 +671,7 @@ class App {
     $('show-path').addEventListener('change', e => { if (this.toolpath) this.toolpath.object.visible = e.target.checked; this.renderLegend(); this.viewer.dirty = true; });
     $('show-rapids').addEventListener('change', e => { this.toolpath?.setShowRapids(e.target.checked); this.viewer.dirty = true; });
     $('show-tool').addEventListener('change', e => { if (this.toolGroup) this.toolGroup.visible = e.target.checked; this.viewer.dirty = true; });
+    $('show-fixtures').addEventListener('change', e => { if (this.fixtures) this.fixtures.visible = e.target.checked; this.viewer.dirty = true; });
     $('stock-color').addEventListener('change', e => { this.stockMode = e.target.value; this.stock?.setMode(this.stockMode); this.viewer.dirty = true; });
     $('path-color').addEventListener('change', e => this.setPathMode(e.target.value));
     $('speed').addEventListener('change', e => { this.speed = Number(e.target.value); });

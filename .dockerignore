@@ -16,6 +16,7 @@ docs
 tests
 images
 *.stl
+!examples/**/*.stl
 *.block
 *.opt.nc
 moonshot-data

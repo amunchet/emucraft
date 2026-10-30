@@ -103,6 +103,7 @@ flowchart LR
 | `spindle-off-cut` | Material is removed while the spindle is stopped (M5, after M6, before M3) |
 | `shank` | Material taller than the flute length is cut: the shank rubs. Also a shank wider than the cutter touching the stock |
 | `holder` | The holder cylinder (`holder_diameter`, bottom at `stickout` above the tip) touches the stock, including stock left beside the cut |
+| `fixture` | The cutter, shank or holder touches a fixture from the config (a vise, clamp or plate), on any move |
 | `table` | The tip goes below the table / fixture plane (default: the stock bottom) |
 | `link-cut` | A feed move at or above `link_feed` (high-feed "fly" links) removes material (warning) |
 | `travel` | The path leaves the machine travel limits, if configured |
@@ -220,6 +221,38 @@ Tool values are applied in this order, later winning: program comments,
 (`--tool 20:holder_diameter=1.5` or `--tool '*:stickout=2'`). Reports show
 where each value came from. Holder checks need both `holder_diameter` and
 `stickout`.
+
+### Fixtures
+
+A vise, clamp or subplate is a second block that must stay whole. Give it as
+an STL model (binary or ASCII) or a box, placed into program coordinates:
+
+```toml
+[[fixtures]]
+name = "Kurt vise"
+model = "kurt.stl"             # relative to this file
+units = "mm"                   # units of the model (default: this file's units)
+scale = 10                     # e.g. a model drawn in centimeters
+rotate = 0                     # degrees about Z, around the model's origin
+offset = [89.974, -28.049, -2.842]   # then moved by this, in this file's units
+
+[[fixtures]]                   # a box is placed the same way
+name = "toe clamp"
+min = [-1.5, 1.0, -0.6]
+max = [-0.5, 2.0, 0.1]
+```
+
+The fixture is seen from +Z as a height field, like the stock, and every move
+runs over it through the same kernel with the same tools, as a move that must
+not cut: anything the cutter would remove there, or the shank or holder would
+touch, is a `fixture` collision, reported with its line. Feed moves count as
+much as rapids. The grid covers the part of the fixtures the tools can reach,
+at about a million cells (`[check] fixture_resolution` sets the cell size).
+Undercuts in the model are filled in, as seen from above. The viewer draws
+the fixture meshes (the *Fixtures* toggle).
+[`examples/vise/`](examples/vise) holds a block in a Kurt vise modeled in
+centimeters; its demo program profiles through both jaws and slots with a
+holder too short to clear the fixed jaw.
 
 ### Reading tool data from comments
 

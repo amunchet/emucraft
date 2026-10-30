@@ -12,12 +12,13 @@ import math
 import os
 import time
 from array import array
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
 from . import __version__
 from .config import find_config, load_config
+from .fixture import Fixture, place_fixtures
 from .gcode import CYCLE, NOCUT, RAPID, SPINDLE, Interpreter, Message, Program
 from .kernel import EV_BODY, EV_FLUTE, EV_NOCUT_CUT, EV_RAPID_CUT, EV_SPINDLE_OFF_CUT, Sim, simplify
 from .model import (
@@ -32,6 +33,7 @@ from .model import (
 )
 
 MAX_ISSUES = 500
+FIXTURE_CELLS = 1_000_000  # default cell budget of the fixture height field
 
 
 @dataclass
@@ -50,7 +52,7 @@ class Grid:
 class Issue:
     """One problem, possibly spanning a run of consecutive moves."""
 
-    kind: str  # rapid-cut, spindle-off-cut, link-cut, shank, holder, table, travel, tool
+    kind: str  # rapid-cut, spindle-off-cut, link-cut, shank, holder, fixture, table, travel, tool
     severity: str  # "error" | "warning"
     message: str
     first_move: int
@@ -92,6 +94,7 @@ class CheckResult:
     flags: array
     sim: Optional[Sim] = None
     initial_heights: Optional[array] = None  # starting stock of a chained check
+    fixtures: List[Fixture] = field(default_factory=list)
 
     @property
     def errors(self) -> List[Issue]:
@@ -137,6 +140,7 @@ class CheckResult:
             "issues": [i.to_dict() for i in self.issues],
             "messages": [m.to_dict() for m in self.messages],
             "stock": self.stock.to_dict() if self.stock else None,
+            "fixtures": [f.to_dict() for f in self.fixtures],
             "tools": {str(k): v.to_dict() for k, v in self.tools.items()},
             "machine": {
                 "rapid_rate": self.stats.get("rapid_rate"),
@@ -446,6 +450,52 @@ def run_check(
             messages.append(Message("warning", "events-truncated",
                                     f"{dropped} collision events were not recorded (too many)", None))
 
+    # Fixtures are a second block that must stay whole: every move runs over
+    # them as a link, so anything the cutter removes there, or the shank or
+    # holder touches, is a collision.
+    fixtures = place_fixtures(config, units) if config.fixtures else []
+    fixture_time = 0.0
+    if fixtures and slot_specs and program.n_moves:
+        tk = time.perf_counter()
+        reach = max(max([spec.radius or 0.0] + [b[0] for b in spec.bodies()]) for spec in slot_specs.values())
+        pts = program.points
+        lo = [min(f.bounds[0][a] for f in fixtures) for a in range(3)]
+        hi = [max(f.bounds[1][a] for f in fixtures) for a in range(3)]
+        x0, x1 = max(lo[0], min(pts[0::3]) - reach), min(hi[0], max(pts[0::3]) + reach)
+        y0, y1 = max(lo[1], min(pts[1::3]) - reach), min(hi[1], max(pts[1::3]) + reach)
+        z_low = min(pts[2::3])
+        if x1 > x0 and y1 > y0 and z_low < hi[2]:
+            if config.check.fixture_resolution:
+                fcell = float(config.check.fixture_resolution) * cf
+            else:
+                fcell = max(grid.cell if grid else 0.0, _nice(math.sqrt((x1 - x0) * (y1 - y0) / FIXTURE_CELLS)))
+            fnx = max(1, math.ceil((x1 - x0) / fcell - 1e-9))
+            fny = max(1, math.ceil((y1 - y0) / fcell - 1e-9))
+            floor = min(lo[2], z_low) - 1.0  # empty cells: out of reach of every tool
+            # not simplified: every hit names its own move
+            fflags = array("i", (f | NOCUT for f in flags))
+            owner = array("b", [-1]) * (fnx * fny)
+            with Sim(fnx, fny, x0, y0, fcell, floor, floor, tolerance) as fsim:
+                for k, fx in enumerate(fixtures):
+                    fsim.add_mesh(fx.triangles, k, owner)
+                for slot, spec in slot_specs.items():
+                    shape, radius, corner, slope, flute = spec.kernel_args()
+                    fsim.set_tool(slot, shape, radius, corner, slope, flute, [(b[0], b[1]) for b in spec.bodies()])
+                res = fsim.run(program.points, fflags, program.tool_slot,
+                               threads=threads or config.check.threads or min(8, os.cpu_count() or 1))
+
+            def fixture_at(x: float, y: float) -> str:
+                ix = min(fnx - 1, max(0, int((x - x0) / fcell)))
+                iy = min(fny - 1, max(0, int((y - y0) / fcell)))
+                k = owner[iy * fnx + ix]
+                return fixtures[k].name if k >= 0 else "?"
+
+            issues.extend(_issues_from_events(res.events, program, slot_specs, units, fixture=fixture_at))
+            if res.dropped:
+                messages.append(Message("warning", "events-truncated",
+                                        f"{res.dropped} fixture collision events were not recorded (too many)", None))
+        fixture_time = time.perf_counter() - tk
+
     issues.extend(_path_issues(program, flags, table_z, config, cf, tolerance, units))
     for slot, problems in bad_tools.items():
         moves = [i for i in range(program.n_moves) if program.tool_slot[i] == slot]
@@ -480,12 +530,12 @@ def run_check(
         stock_volume = (stock.xmax - stock.xmin) * (stock.ymax - stock.ymin) * (stock.zmax - stock.zmin)
         stats["stock_volume"] = stock_volume
         stats["remaining_volume"] = sim.volume()
-    timing = {"simulate": kernel_time, "check": time.perf_counter() - t0}
+    timing = {"simulate": kernel_time, "fixtures": fixture_time, "check": time.perf_counter() - t0}
     if not keep_sim and sim is not None:
         sim.close()
         sim = None
     return CheckResult(program, config, stock, tools, grid, issues, messages, stats, timing, flags, sim,
-                       initial_heights)
+                       initial_heights, fixtures)
 
 
 def _fmt(value: float, units: str) -> str:
@@ -493,15 +543,23 @@ def _fmt(value: float, units: str) -> str:
 
 
 def _issues_from_events(events, program: Program, specs: Dict[int, ToolSpec], units: str,
-                        link_severity: str = "warning") -> List[Issue]:
+                        link_severity: str = "warning",
+                        fixture: Optional[Callable[[float, float], str]] = None) -> List[Issue]:
+    """Group kernel events into issues. With ``fixture`` (the fixture name at a
+    point), the events come from a fixture block, where any cut is a collision."""
     labels = {EV_RAPID_CUT: "rapid-cut", EV_SPINDLE_OFF_CUT: "spindle-off-cut",
               EV_NOCUT_CUT: "link-cut", EV_FLUTE: "shank"}
     open_: Dict[Tuple[str, int], Issue] = {}
     out: List[Issue] = []
+    parts: Dict[int, str] = {}  # fixture issues: id -> "cutter", "shank" or "holder"
     for ev in sorted(events, key=lambda e: (e.move, e.kind, e.body)):
         slot = program.tool_slot[ev.move]
         spec = specs.get(slot)
-        if ev.kind == EV_BODY:
+        if fixture is not None:
+            if ev.kind == EV_FLUTE:
+                continue  # the cut itself is the collision
+            kind = "fixture"
+        elif ev.kind == EV_BODY:
             bodies = spec.bodies() if spec else []
             kind = bodies[ev.body][2] if 0 <= ev.body < len(bodies) else "holder"
         else:
@@ -525,12 +583,24 @@ def _issues_from_events(events, program: Program, specs: Dict[int, ToolSpec], un
         number = spec.number if spec else program.tool_number(ev.move)
         cur = Issue(kind, "error", "", ev.move, last, line, program.line[last], (ev.x, ev.y, ev.z),
                     depth=ev.depth, volume=ev.volume, tool=number, moves=last - ev.move + 1)
-        if ev.kind == EV_NOCUT_CUT:
+        if fixture is not None:
+            bodies = spec.bodies() if spec else []
+            parts[id(cur)] = ("cutter" if ev.kind != EV_BODY
+                              else bodies[ev.body][2] if 0 <= ev.body < len(bodies) else "holder")
+        elif ev.kind == EV_NOCUT_CUT:
             cur.severity = link_severity
         open_[key] = cur
     out.extend(open_.values())
     for issue in out:
-        issue.message = _event_message(issue, program, specs, units)
+        if fixture is None:
+            issue.message = _event_message(issue, program, specs, units)
+            continue
+        tool = f"T{issue.tool}" if issue.tool is not None else "The tool"
+        where = fixture(issue.position[0], issue.position[1])
+        part = parts[id(issue)]
+        issue.message = (f"{tool} cuts into fixture {where} ({_fmt(issue.depth, units)} deep)" if part == "cutter"
+                         else f"{part.capitalize()} of {tool} hits fixture {where} "
+                              f"({_fmt(issue.depth, units)} interference)")
     return out
 
 

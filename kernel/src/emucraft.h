@@ -135,6 +135,12 @@ EC_API void ec_sim_clear_tool(ec_sim *s, int32_t slot);
 EC_API void ec_sim_sample(const ec_sim *s, int32_t nx, int32_t ny, double x0, double y0, double cell,
                           double x_max, double y_max, float *out);
 
+/* Raise the height field to the top of a triangle mesh seen from +Z (n
+ * triangles, 9 floats each: a fixture modeled as stock that must stay whole).
+ * Where the mesh becomes the top, owner[iy * nx + ix] = id (owner may be
+ * NULL). Call ec_sim_invalidate afterwards. */
+EC_API void ec_sim_add_mesh(ec_sim *s, const float *tris, int32_t n, int8_t id, int8_t *owner);
+
 /* Total material volume above z_bottom, and height range, over the grid. */
 EC_API double ec_sim_volume(const ec_sim *s);
 EC_API double ec_sim_min_height(const ec_sim *s);
