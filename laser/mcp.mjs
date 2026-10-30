@@ -12,7 +12,7 @@
 // the API's LASER_SECRET, or the two would scale a part by different factors and narrow down its real size.
 // Stateless: each request gets its own MCP server and transport. GET /health answers for the container.
 //
-// Run: node mcp.mjs   (env: HOST=127.0.0.1, PORT=8002, LASER_JOBS=2, LASER_TIMEOUT_S=300, LASER_MAX_MB=64,
+// Run: node mcp.mjs   (env: HOST=127.0.0.1, PORT=8002, LASER_JOBS=2, LASER_TIMEOUT_S=300, LASER_MAX_MB=256,
 //   LASER_TOKEN unset = no auth (leave it unset behind Caddy, which removes the bearer token), LASER_SECRET,
 //   LASER_TEMPLATES=templates)
 import http from 'node:http';
@@ -103,7 +103,7 @@ function mcp_server(run, templates) {
 
 // HTTP server: POST /mcp (stateless streamable HTTP), PUT /templates/<id>.<stl|obj>, GET /health. Jobs beyond `jobs`
 // concurrent ones are refused.
-export function make_mcp_server({ jobs = 2, timeout_s = 300, max_mb = 64, token = '', secret = randomBytes(32), templates = 'templates' } = {}) {
+export function make_mcp_server({ jobs = 2, timeout_s = 300, max_mb = 256, token = '', secret = randomBytes(32), templates = 'templates' } = {}) {
   const max_body = max_mb * 1024 * 1024, auth = Buffer.from(`Bearer ${token}`);
   let running = 0;
   const run = async (body, signal) => {
@@ -117,7 +117,7 @@ export function make_mcp_server({ jobs = 2, timeout_s = 300, max_mb = 64, token 
   };
   const json = (out, status, value) => { out.writeHead(status, { 'Content-Type': 'application/json' }); out.end(JSON.stringify(value)); };
   const same = (header, want) => { const got = Buffer.from(header || ''); return got.length === want.length && timingSafeEqual(got, want); };
-  return http.createServer(async (req, out) => {
+  const server = http.createServer(async (req, out) => {
     const url = new URL(req.url, 'http://x'), path = url.pathname, put = /^\/templates\/([^/]+)\.(stl|obj)$/.exec(path);
     try {
       if (req.method === 'GET' && path === '/health') return json(out, 200, { status: 'ok', running });
@@ -152,9 +152,11 @@ export function make_mcp_server({ jobs = 2, timeout_s = 300, max_mb = 64, token 
       if (!out.headersSent && !out.destroyed) json(out, 500, { error: 'internal error (see the server log)' });
     }
   });
+  server.requestTimeout = 30 * 60 * 1000; // node's 5 min default cuts off a big template upload on a slow link
+  return server;
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const env = process.env, host = env.HOST || '127.0.0.1', port = Number(env.PORT || 8002);
-  make_mcp_server({ jobs: Number(env.LASER_JOBS || 2), timeout_s: Number(env.LASER_TIMEOUT_S || 300), max_mb: Number(env.LASER_MAX_MB || 64), token: env.LASER_TOKEN || '', templates: env.LASER_TEMPLATES || 'templates', ...(env.LASER_SECRET && { secret: env.LASER_SECRET }) }).listen(port, host, () => console.log(`laser MCP on http://${host}:${port}/mcp`));
+  make_mcp_server({ jobs: Number(env.LASER_JOBS || 2), timeout_s: Number(env.LASER_TIMEOUT_S || 300), max_mb: Number(env.LASER_MAX_MB || 256), token: env.LASER_TOKEN || '', templates: env.LASER_TEMPLATES || 'templates', ...(env.LASER_SECRET && { secret: env.LASER_SECRET }) }).listen(port, host, () => console.log(`laser MCP on http://${host}:${port}/mcp`));
 }

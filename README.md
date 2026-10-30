@@ -471,7 +471,7 @@ The same jobs as MCP tools, for an agent, over streamable HTTP at `/mcp` (statel
 | `upload_template` | Store a part (`id`, `format`, base64 `data`) as a template; `replace: true` overwrites an existing id |
 | `delete_template` | Delete a template |
 
-Run it with `cd laser && node mcp.mjs` (port 8002) or as the `laser-mcp` service. It takes the API's environment variables (`LASER_TOKEN` guards `/mcp`), and should get the API's `LASER_SECRET` so a part gets the same stand-in size from both. Tool calls carry the files in base64, so the request cap `LASER_MAX_MB` applies to the whole call.
+Run it with `cd laser && node mcp.mjs` (port 8002) or as the `laser-mcp` service. It takes the API's environment variables (`LASER_TOKEN` guards `/mcp`), and should get the API's `LASER_SECRET` so a part gets the same stand-in size from both. Tool calls carry the files in base64, so the request cap `LASER_MAX_MB` applies to the whole call. Here it defaults to 256 MB (the API keeps 64), for big template parts, and a request may take up to 30 minutes to arrive. A 256 MB STL is about 5 million triangles; raise `LASER_MAX_MB` for more, but a base64 tool call briefly holds about four times its size in memory and the container is capped at 4 GB, so send big parts by `PUT` instead.
 
 #### Templates
 Templates are proprietary master parts, such as a 1911 frame or a Colt Python, stored once and engraved by id so the model doesn't travel with every job. They can be uploaded, replaced and deleted, never downloaded:
