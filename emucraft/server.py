@@ -221,9 +221,9 @@ class Handler(BaseHTTPRequestHandler):
     def _list_programs(self) -> List[dict]:
         out = []
         for source, folder in self.server.program_dirs():
-            for f in sorted(folder.iterdir()):
+            for f in sorted(folder.rglob("*")):
                 if f.is_file() and f.suffix.lower() in PROGRAM_SUFFIXES:
-                    out.append({"name": f.name, "size": f.stat().st_size, "source": source})
+                    out.append({"name": f.relative_to(folder).as_posix(), "size": f.stat().st_size, "source": source})
         return out
 
     def _static(self, path: str) -> None:

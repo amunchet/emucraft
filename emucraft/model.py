@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import asdict, dataclass, field, fields
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from .gcode import MM_PER_INCH, Message, Program
@@ -137,6 +138,32 @@ class StockSpec:
 
 
 @dataclass
+class FixtureSpec:
+    """A vise, clamp or plate the tool must never touch: an STL model or a box.
+
+    The model is scaled by ``scale`` (its lengths are in ``units``, default the
+    config's), turned ``rotate`` degrees about Z around the model origin, then
+    moved by ``offset`` (config units).
+    """
+
+    name: str = ""
+    model: Optional[str] = None  # STL path
+    box: Optional[Tuple[Tuple[float, float, float], Tuple[float, float, float]]] = None
+    units: Optional[str] = None
+    scale: float = 1.0
+    rotate: float = 0.0
+    offset: Tuple[float, float, float] = (0.0, 0.0, 0.0)
+
+    @property
+    def label(self) -> str:
+        if self.name:
+            return self.name
+        if self.model:
+            return Path(self.model).stem
+        return "fixture"
+
+
+@dataclass
 class MachineSpec:
     rapid_rate: Optional[float] = None  # units/min; default 1000 in/min
     rapid_mode: str = "linear"  # "linear" or "dogleg" (non-interpolated rapids)
@@ -162,6 +189,7 @@ class CheckSpec:
     default_units: str = "inch"
     threads: Optional[int] = None
     fuzz_threshold: float = 0.85  # how close a comment label must be to an alias (1 = exact)
+    fixture_resolution: Optional[float] = None  # fixture cell size; default ~1 million cells over its reach
 
 
 @dataclass
@@ -170,6 +198,7 @@ class Config:
     machine: MachineSpec = field(default_factory=MachineSpec)
     check: CheckSpec = field(default_factory=CheckSpec)
     stock: Optional[StockSpec] = None
+    fixtures: List[FixtureSpec] = field(default_factory=list)
     tools: Dict[int, Dict[str, object]] = field(default_factory=dict)
     default_tool: Dict[str, object] = field(default_factory=dict)
     optimize: Dict[str, object] = field(default_factory=dict)

@@ -3,8 +3,8 @@ import { el, fmtClock, fmtLen, toolColor } from './util.js';
 
 const KIND_LABEL = {
   'rapid-cut': 'Rapid into material', 'spindle-off-cut': 'Spindle stopped', 'link-cut': 'Link move cutting',
-  shank: 'Shank / flute length', holder: 'Holder collision', table: 'Below table', travel: 'Travel limit',
-  tool: 'Missing tool data',
+  shank: 'Shank / flute length', holder: 'Holder collision', fixture: 'Fixture collision', table: 'Below table',
+  travel: 'Travel limit', tool: 'Missing tool data',
 };
 
 function icon(markup) {
@@ -25,7 +25,7 @@ export function renderIssues(root, report, { onIssue, onLine, selected }) {
     root.append(el('div', { class: 'all-clear' },
       icon('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m7 12.5 3.2 3.2L17 9"/></svg>'),
       'No collisions found',
-      el('div', { class: 'note' }, 'Rapids, spindle state, flutes, shank, holder and table were checked on every move.')));
+      el('div', { class: 'note' }, `Rapids, spindle state, flutes, shank, holder${report.fixtures?.length ? ', fixtures' : ''} and table were checked on every move.`)));
   }
   issues.forEach((issue, i) => {
     const card = el('div', {
@@ -81,6 +81,15 @@ export function renderSetup(root, report, { units, readOnly, onApply, settings }
     field('X min', 'xmin', s.xmin), field('X max', 'xmax', s.xmax),
     field('Y min', 'ymin', s.ymin), field('Y max', 'ymax', s.ymax),
     field('Z min (bottom)', 'zmin', s.zmin), field('Z max (top)', 'zmax', s.zmax, { source: stockSrc })));
+
+  if (report.fixtures?.length) {
+    form.append(el('h3', {}, 'Fixtures'));
+    for (const f of report.fixtures) {
+      const [lo, hi] = f.bounds;
+      form.append(el('div', { class: 'note' }, `${f.name}: X${fmtLen(lo[0], u)}..${fmtLen(hi[0], u)} `
+        + `Y${fmtLen(lo[1], u)}..${fmtLen(hi[1], u)} Z${fmtLen(lo[2], u)}..${fmtLen(hi[2], u)} (from the config file)`));
+    }
+  }
 
   form.append(el('h3', {}, 'Tools'));
   for (const [number, spec] of Object.entries(report.tools)) {

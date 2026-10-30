@@ -145,6 +145,16 @@ def test_programs_folder_keeps_paths_inside(served):
         call("program_info", gcode=HEADER, config_path="../pyproject.toml")
 
 
+def test_fixture_models_stay_inside_the_programs_folder(served, tmp_path, settings_file):
+    (tmp_path / "plate.stl").write_text("solid p\nendsolid p\n")
+    settings_file.write_text(json.dumps({"fixtures": [{"model": str(tmp_path / "plate.stl")}]}))
+    served(EXAMPLES)
+    with pytest.raises(RuntimeError, match="fixture model .* is outside the programs folder"):
+        call("check_program", gcode=HEADER)
+    report = call("check_program", path="vise/vise_demo.nc")  # its own config, model next to it
+    assert [i["kind"] for i in report["issues"]] == ["fixture", "fixture", "holder"]
+
+
 def test_http_app_needs_the_token(monkeypatch):
     from starlette.testclient import TestClient
 

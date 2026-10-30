@@ -17,6 +17,18 @@ Example (all sections optional)::
     resolution = 0.002
     link_feed = 700           # feed moves this fast must not touch material
 
+    [[fixtures]]              # nothing may touch these (STL path relative to this file)
+    name = "vise"
+    model = "kurt.stl"
+    units = "mm"              # units of the model (default: this file's)
+    scale = 10                # e.g. a model drawn in cm
+    rotate = 90               # degrees about Z, around the model origin
+    offset = [3.5, -1.2, -2.0]
+
+    [[fixtures]]              # or a box, placed the same way
+    min = [-4, -1, -0.5]
+    max = [-3, 5, 0]
+
     [tools.20]
     shape = "flat"
     diameter = 0.375
@@ -44,7 +56,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Union
 
 from .gcode import DEFAULT_LABEL_ALIASES
-from .model import CheckSpec, Config, MachineSpec, StockSpec
+from .model import CheckSpec, Config, FixtureSpec, MachineSpec, StockSpec
 
 try:  # Python 3.11+
     import tomllib as _toml
@@ -114,6 +126,7 @@ _CHECK_RULES = {
     "default_units": _UNITS,
     "threads": _optional(_POSITIVE_INT),
     "fuzz_threshold": ("a number between 0 and 1", lambda v: _number(v) and 0 <= v <= 1),
+    "fixture_resolution": _optional(_POSITIVE),
 }
 _TOOL_RULES = {
     "diameter": _POSITIVE,
@@ -162,8 +175,13 @@ def _rule_target(section: str, target) -> str:
     return target
 
 
-def config_from_dict(data: Dict[str, Any]) -> Config:
-    top = {"units", "machine", "check", "stock", "tools", "default_tool", "optimize",
+def _point(value) -> bool:
+    return isinstance(value, list) and len(value) == 3 and all(_number(v) for v in value)
+
+
+def config_from_dict(data: Dict[str, Any], base: Optional[Path] = None) -> Config:
+    """Validate a config; fixture model paths are relative to ``base`` (default: the working folder)."""
+    top = {"units", "machine", "check", "stock", "fixtures", "tools", "default_tool", "optimize",
            "comment_rules", "variable_rules", "comment_aliases"}
     _check_keys("top level", data, top)
     cfg = Config()
@@ -197,6 +215,40 @@ def config_from_dict(data: Dict[str, Any]) -> Config:
             cfg.stock = StockSpec(*map(float, lo), *map(float, hi), source="config")
             if not cfg.stock.valid():
                 raise ConfigError("[stock] max must be larger than min on every axis")
+        fixtures = data.get("fixtures") or []
+        if not isinstance(fixtures, list):
+            raise ConfigError("[[fixtures]] must be a list of tables")
+        for i, fx in enumerate(fixtures):
+            section = f"fixtures.{i + 1}"
+            _check_keys(section, fx, {"name", "model", "min", "max", "units", "scale", "rotate", "offset"})
+            spec = FixtureSpec(name=str(fx.get("name") or ""), units=fx.get("units"),
+                               scale=fx.get("scale", 1.0), rotate=fx.get("rotate", 0.0))
+            if ("model" in fx) == ("min" in fx or "max" in fx):
+                raise ConfigError(f"[{section}] needs either model = \"file.stl\" or min and max")
+            if "model" in fx:
+                if not isinstance(fx["model"], str):
+                    raise ConfigError(f"[{section}] model must be a file path")
+                model = Path(fx["model"]).expanduser()
+                model = (base / model if base is not None and not model.is_absolute() else model).resolve()
+                if not model.is_file():
+                    raise ConfigError(f"[{section}] model {model} not found")
+                spec.model = str(model)
+            else:
+                lo, hi = fx.get("min"), fx.get("max")
+                if not (_point(lo) and _point(hi) and all(a < b for a, b in zip(lo, hi))):
+                    raise ConfigError(f"[{section}] needs min = [x, y, z] < max = [x, y, z]")
+                spec.box = (tuple(map(float, lo)), tuple(map(float, hi)))
+            if spec.units is not None and spec.units not in ("inch", "mm"):
+                raise ConfigError(f"[{section}] units must be 'inch' or 'mm'")
+            if not (_number(spec.scale) and spec.scale > 0):
+                raise ConfigError(f"[{section}] scale must be a positive number")
+            if not _number(spec.rotate):
+                raise ConfigError(f"[{section}] rotate must be a number of degrees")
+            offset = fx.get("offset", [0.0, 0.0, 0.0])
+            if not _point(offset):
+                raise ConfigError(f"[{section}] offset must be [x, y, z]")
+            spec.offset = tuple(map(float, offset))
+            cfg.fixtures.append(spec)
         tools = data.get("tools") or {}
         if not isinstance(tools, dict):
             raise ConfigError("[tools] must be a table of tool numbers")
@@ -261,7 +313,7 @@ def load_config(path: Optional[Union[str, Path]]) -> Config:
             data = _toml.loads(text)
         except Exception as exc:  # tomllib.TOMLDecodeError
             raise ConfigError(f"{path}: {exc}") from None
-    return config_from_dict(data)
+    return config_from_dict(data, path.parent)
 
 
 def find_config(start: Union[str, Path]) -> Optional[Path]:
