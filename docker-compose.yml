@@ -1,77 +1,18 @@
-# Three apps, each its own image, all on the shared Caddy network and none publishing ports:
-#   emucraft      G-code viewer             http://emucraft:8000
-#   moonshot      Moonshot's web page       http://moonshot:8000
-#   laser         laser engraving simulator http://laser:80
-#   laser-api     laser customer GLB API    http://laser-api:8001/api/laser/  (for the shop's backend)
-#   moonshot-mcp  Moonshot's MCP server     http://moonshot-mcp:8000/mcp  (only with --profile moonshot-mcp)
-#   emucraft-mcp  emucraft's MCP server     http://emucraft-mcp:8000/mcp  (only with --profile emucraft-mcp)
-#   laser-mcp     the laser MCP server      http://laser-mcp:8000/mcp     (only with --profile laser-mcp)
-# All three MCP servers: COMPOSE_PROFILES=moonshot-mcp,emucraft-mcp,laser-mcp docker compose up -d
+# Everything: the four apps (docker-compose.apps.yml) and their three MCP servers, all on the shared Caddy network
+# and none publishing ports. `docker compose up -d --build` starts all of it.
+#   moonshot-mcp  Moonshot's MCP server     http://moonshot-mcp:8000/mcp
+#   emucraft-mcp  emucraft's MCP server     http://emucraft-mcp:8000/mcp
+#   laser-mcp     the laser MCP server      http://laser-mcp:8000/mcp
+# Apps only: docker compose -f docker-compose.apps.yml up -d --build
+include:
+  - docker-compose.apps.yml
+
 services:
-  emucraft:
-    build: .
-    image: emucraft:latest
-    container_name: emucraft
-    restart: unless-stopped
-    expose:
-      - "8000"
-    # Uncomment to list your own programs (and an emucraft.toml) in the viewer
-    # volumes:
-    #   - ./programs:/programs:ro
-    networks:
-      - emucraft
-
-  moonshot:
-    build:
-      context: .
-      dockerfile: moonshot/Dockerfile
-    image: moonshot:latest
-    container_name: moonshot
-    restart: unless-stopped
-    expose:
-      - "8000"
-    volumes:
-      - moonshot-web:/data
-    networks:
-      - emucraft
-
-  laser:
-    build: laser
-    image: emucraft-laser:latest
-    container_name: laser
-    restart: unless-stopped
-    expose:
-      - "80"
-    networks:
-      - emucraft
-
-  # Laser customer GLB API (laser/server.mjs): POST /api/laser/render -> customer GLB. Rendering is CPU- and
-  # memory-heavy, so it is capped; set LASER_TOKEN unless only the shop's backend can reach it.
-  laser-api:
-    build:
-      context: laser
-      dockerfile: Dockerfile.api
-    image: emucraft-laser-api:latest
-    container_name: laser-api
-    restart: unless-stopped
-    mem_limit: 4g
-    cpus: 4
-    expose:
-      - "8001"
-    environment:
-      - LASER_TOKEN=${LASER_TOKEN:-}
-      - LASER_SECRET=${LASER_SECRET:-}
-    volumes:
-      - laser-templates:/templates:ro   # renders templates by id; laser-mcp uploads them
-    networks:
-      - emucraft
-
   # Moonshot's MCP server: the moonshot image, run as its own service with its own data.
   moonshot-mcp:
     image: moonshot:latest
     container_name: moonshot-mcp
     restart: unless-stopped
-    profiles: ["moonshot-mcp"]
     depends_on:
       - moonshot   # builds the image
     command: ["python", "-m", "moonshot.server", "--http", "--host", "0.0.0.0", "--port", "8000"]
@@ -93,7 +34,6 @@ services:
     image: emucraft:latest
     container_name: emucraft-mcp
     restart: unless-stopped
-    profiles: ["emucraft-mcp"]
     depends_on:
       - emucraft   # builds the image
     command: ["python", "-m", "emucraft", "mcp", "--http", "--host", "0.0.0.0", "--port", "8000", "--programs", "/programs"]
@@ -116,7 +56,6 @@ services:
     image: emucraft-laser-api:latest
     container_name: laser-mcp
     restart: unless-stopped
-    profiles: ["laser-mcp"]
     depends_on:
       - laser-api   # builds the image
     command: ["node", "mcp.mjs"]
@@ -136,12 +75,5 @@ services:
       - emucraft
 
 volumes:
-  moonshot-web:
   moonshot-mcp:
   emucraft-mcp:
-  laser-templates:   # proprietary template parts: never bind-mount this into a served directory
-
-networks:
-  emucraft:
-    external: true
-    name: ${EMUCRAFT_NETWORK:-emucraft}
