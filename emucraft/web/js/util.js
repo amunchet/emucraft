@@ -102,13 +102,16 @@ export function downloadText(name, text) {
 }
 
 // Emucraft's web apps, each served under its own path on one host (example.com/moonshot/) or, locally, at the root of
-// its default port. laser/src/main.js keeps a copy of this list, since the laser simulator is built on its own.
-const APPS = [['emucraft', 'Emucraft', 8765], ['moonshot', 'Moonshot', 8766], ['laser-simulator', 'Laser Simulator', 5173]];
+// its default port. The MCP token page (/admin) comes from caddy-auth0 on the deployed host only, so it has no port and
+// is left out locally. laser/src/main.js keeps a copy of this list, since the laser simulator is built on its own.
+const APPS = [['emucraft', 'Emucraft', 8765], ['moonshot', 'Moonshot', 8766], ['laser-simulator', 'Laser Simulator', 5173],
+  ['admin', 'MCP Admin', null]];
 
 // Turns an app's brand into a menu that switches to the other apps.
 export function appSwitcher(brand, current) {
   const local = !APPS.some(([path]) => path === location.pathname.split('/')[1]);
-  const menu = el('nav', { class: 'app-menu', hidden: true }, APPS.map(([path, label, port]) => el('a', {
+  const links = APPS.filter(([, , port]) => port || !local);
+  const menu = el('nav', { class: 'app-menu', hidden: true }, links.map(([path, label, port]) => el('a', {
     href: local ? `${location.protocol}//${location.hostname}:${port}/` : `/${path}/`,
     'aria-current': path === current && 'page',
   }, label)));
