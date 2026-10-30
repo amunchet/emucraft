@@ -109,6 +109,7 @@ _CHECK_RULES = {
     "link_feed": _optional(_POSITIVE),
     "link_severity": ('"error" or "warning"', lambda v: v in ("error", "warning")),
     "block_delete": ("true or false", lambda v: isinstance(v, bool)),
+    "broken_tool": ("true or false", lambda v: isinstance(v, bool)),
     "tool_point": _optional(('"tip" or "center"', lambda v: v in ("tip", "center"))),
     "units": _optional(_UNITS),
     "default_units": _UNITS,

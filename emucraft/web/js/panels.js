@@ -3,7 +3,8 @@ import { el, fmtClock, fmtLen, toolColor } from './util.js';
 
 const KIND_LABEL = {
   'rapid-cut': 'Rapid into material', 'spindle-off-cut': 'Spindle stopped', 'link-cut': 'Link move cutting',
-  shank: 'Shank / flute length', holder: 'Holder collision', table: 'Below table', travel: 'Travel limit',
+  shank: 'Shank / flute length', holder: 'Holder collision', 'broken-tool': 'Holder if the tool breaks',
+  table: 'Below table', travel: 'Travel limit',
   tool: 'Missing tool data',
 };
 
@@ -25,7 +26,7 @@ export function renderIssues(root, report, { onIssue, onLine, selected }) {
     root.append(el('div', { class: 'all-clear' },
       icon('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m7 12.5 3.2 3.2L17 9"/></svg>'),
       'No collisions found',
-      el('div', { class: 'note' }, 'Rapids, spindle state, flutes, shank, holder and table were checked on every move.')));
+      el('div', { class: 'note' }, 'Rapids, spindle state, flutes, shank, holder (also with a broken tool) and table were checked on every move.')));
   }
   issues.forEach((issue, i) => {
     const card = el('div', {
