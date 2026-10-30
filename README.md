@@ -387,6 +387,8 @@ Model (`laser/src/sim.js`):
 - The focal plane sits at the highest point under the footprint, plus the focus offset.
 - Passes are simulated in up to 24 steps. In each step every cell removes `max(0, grey · power/max · (spot/d)² − threshold) / (1 − threshold) · depth_per_pass`. That removal is spread by a Gaussian with σ = d/4, using the cell's own current defocus. Deeper cuts therefore grow wider, shallower and fuzzier.
 
+Templates: the Inputs panel's **Or a stored template** list offers the parts stored as [templates](#templates). Picking one downloads it and loads it like an uploaded model, at true scale. The `laser` image's nginx passes `/api/laser/templates` on to `laser-api` (`laser/nginx.conf.template`; `LASER_API_URL`, default `http://laser-api:8001`, with `LASER_TOKEN` sent as its bearer token). Under `npm run dev`, Vite passes it to a local `node server.mjs`. Without the API, the list shows **Unavailable** and the rest of the app works as before.
+
 Sample: `laser/samples/` has a parametric full-size 1911 grip panel with a strong crown (7.6 mm thick at the centre, ~3.3 mm at the edges before the round-over) (`node make_1911_grip.mjs` writes `1911_grip.stl`) and a full-coverage design that bleeds past the panel edges (`1911_grip_design.png`, drawn by `make_1911_bitmap.mjs`, which needs playwright and a Chromium). Load both, then set W = 47 mm (aspect locked), X = Y = 0.125 and angle 0 to line the design up with the panel.
 
 ### Customer GLB API (`laser/server.mjs`)
@@ -403,10 +405,11 @@ Run it with `cd laser && npm install && node server.mjs`. It listens on `127.0.0
 
 With Docker, `docker compose up -d --build` also starts the `laser-api` container (built from `laser/Dockerfile.api`), capped at 4 GB of memory and 4 CPUs. Set `LASER_TOKEN` and `LASER_SECRET` in the environment that runs compose to pass them through.
 
-A render of the sample grip takes about 30 s of CPU and peaks at about 0.5 GB of memory. Call it from the shop's backend and pass the GLB on to the browser, or set `LASER_TOKEN`. Don't route it publicly without authentication. If the backend reaches it through Caddy:
+A render of the sample grip takes about 30 s of CPU and peaks at about 0.5 GB of memory. Call it from the shop's backend and pass the GLB on to the browser, or set `LASER_TOKEN`. Don't route it publicly without authentication. If the backend reaches it through Caddy, route only these two paths, since `/api/laser/templates` hands out the template files:
 
 ```
-handle /api/laser/* {
+@laser_api path /api/laser/info /api/laser/render
+handle @laser_api {
     reverse_proxy laser-api:8001
 }
 ```
@@ -416,6 +419,7 @@ Guard rails:
 - A job whose client disconnects is stopped.
 
 - `GET /api/laser/info` returns the material presets, the laser defaults and the output defaults.
+- `GET /api/laser/templates` lists the stored templates (id, format, file size, upload time), and `GET /api/laser/templates/<id>` returns one's model file, with its format in `X-Template-Format`. Both need the bearer token when `LASER_TOKEN` is set. They are there for the simulator app's template list.
 - `POST /api/laser/render` takes a JSON job and returns `model/gltf-binary`. A summary goes in the `X-Laser-Summary` header: texture size, triangle counts, max engraved depth and bytes. It deliberately contains nothing that gives away the part's size. A bad job gets `400 {"error": "..."}`; unknown fields are rejected, not ignored. When `LASER_JOBS` jobs are already running, it returns `503`.
 
 ```json
@@ -475,8 +479,9 @@ The same jobs as MCP tools, for an agent, over streamable HTTP at `/mcp` (statel
 Run it with `cd laser && node mcp.mjs` (port 8002) or as the `laser-mcp` service. It takes the API's environment variables (`LASER_TOKEN` guards `/mcp`), and should get the API's `LASER_SECRET` so a part gets the same stand-in size from both. Tool calls carry the files in base64, so the request cap `LASER_MAX_MB` applies to the whole call. Here it defaults to 256 MB (the API keeps 64), for big template parts, and a request may take up to 30 minutes to arrive. A 256 MB STL is about 5 million triangles; raise `LASER_MAX_MB` for more, but a base64 tool call briefly holds about four times its size in memory and the container is capped at 4 GB, so send big parts by `PUT` instead.
 
 #### Templates
-Templates are proprietary master parts, such as a 1911 frame or a Colt Python, stored once and engraved by id so the model doesn't travel with every job. They can be uploaded, replaced and deleted, never downloaded:
-- No tool or route reads a template back. `list_templates` shows only the id, format, file size and upload time, with no dimensions or geometry.
+Templates are proprietary master parts, such as a 1911 frame or a Colt Python, stored once and engraved by id so the model doesn't travel with every job. They are uploaded, replaced and deleted over MCP, and the only way back out is the simulator app:
+- No MCP tool reads a template back. `list_templates` shows only the id, format, file size and upload time, with no dimensions or geometry.
+- The API's `GET /api/laser/templates/<id>` returns the model file so the simulator app can load it, at true scale. In production that sits behind the site's sign-in (Caddy's `@apps`, read permission) via the `laser` container's nginx, so **any signed-in user of the simulator can download a template's geometry**. Grant the read permission only to people trusted with the parts, and don't route `/api/laser/templates` from anywhere public.
 - A render of a template is always the stand-in from [What the file contains](#customer-glb-api-laserservermjs): `true_scale` is refused for templates.
 - Files are written `0600` in a `0700` directory, ids are limited to `a-z 0-9 _ -` so they can't leave it, and an upload is only stored once it parses as a model with triangles. `templates` is in `.gitignore` and `.dockerignore`.
 - With compose, they live in the `laser-templates` volume: `laser-mcp` mounts it read-write, `laser-api` read-only, so the shop's backend can render `{ "model": { "template": "..." } }` but not change them. Keep the volume out of any directory a web server serves, and out of backups that get shared.
@@ -488,7 +493,7 @@ curl -X PUT --data-binary @colt_python.stl -H "Authorization: Bearer $TOKEN" \
     https://emu.north.altamontco.com/laser-mcp/templates/colt_python.stl        # ?replace=1 to overwrite
 ```
 
-`GET` on that path is `405`: there is no way to fetch it. Anyone with an MCP token can upload or delete templates, so mint `laser-mcp` tokens only for people trusted with them.
+`GET` on that path is `405`: the MCP server has no way to fetch it (the simulator app goes through the API instead). Anyone with an MCP token can upload or delete templates, so mint `laser-mcp` tokens only for people trusted with them.
 
 Limitations and next steps: STEP/IGES import (would need occt-import-js), lasers that don't fire straight down or rotary axes, heightmap export, and splitting the 720 kB bundle into smaller chunks.
 

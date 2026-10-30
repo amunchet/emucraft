@@ -7,7 +7,7 @@
 //                    with the raw file, for parts too big to pass through a tool call
 //   delete_template  remove one
 //
-// Templates are write-only: nothing here or in the API reads one back (see server.mjs).
+// Templates are write-only here: no tool reads one back. Only the simulator app loads them, through the API (server.mjs).
 // The job is the API's, so a render here is the same stand-in part as from POST /api/laser/render: give this server
 // the API's LASER_SECRET, or the two would scale a part by different factors and narrow down its real size.
 // Stateless: each request gets its own MCP server and transport. GET /health answers for the container.
@@ -29,7 +29,7 @@ Placement is in the simulator frame: the model centred in XY, its lowest point a
 Unless output.true_scale is set, the GLB is a faithful render of a stand-in part scaled by a fixed factor in [0.9, 1.1].
 Templates are stored proprietary parts (a 1911 frame, a Colt Python, ...): upload_template stores one under an id,
 render_glb engraves it with \`template\` in place of model_format/model_data, delete_template removes it. They cannot be
-downloaded, and their renders are always the stand-in.`;
+downloaded over MCP, and their renders are always the stand-in.`;
 
 const n = (what) => z.number().optional().describe(what);
 const job_shape = {
