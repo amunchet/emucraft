@@ -1,0 +1,17 @@
+# The simulator's static build, plus the template routes of the laser API (laser-api), so the app can list and
+# load stored templates. Only those routes are passed on: rendering stays with the shop's backend. The nginx image
+# fills in LASER_API_URL and LASER_TOKEN at start; Docker's DNS resolves laser-api per request, so the app still
+# starts without it.
+server {
+    listen 80;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    location /api/laser/templates {
+        resolver 127.0.0.11 valid=30s;
+        set $api ${LASER_API_URL};
+        proxy_pass $api;
+        proxy_set_header Authorization "Bearer ${LASER_TOKEN}";
+        proxy_buffering off;
+    }
+}

@@ -1,11 +1,14 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import * as THREE from 'three';
 import { PNG } from 'pngjs';
 import validator from 'gltf-validator';
 import { DEFAULT_LASER, simulate } from '../src/sim.js';
 import { PRESETS, procedural_pixels, triangle_soup, centre_model } from '../src/part.js';
 import { customer_glb } from '../src/relief.js';
-import { make_server, size_jitter } from '../server.mjs';
+import { make_server, size_jitter, save_template } from '../server.mjs';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 
 // 30 x 20 x 4 mm plate with a 3 mm through hole, as a centred triangle soup
@@ -258,6 +261,24 @@ describe('HTTP API', () => {
     const { glb: want } = await customer_glb({ positions: stand_in, res, placement, look, mesh_mm: 1, max_texture: 512 }, png);
     expect(Buffer.compare(Buffer.from(got), Buffer.from(want))).toBe(0);
   }, 120000);
+
+  it('lists templates and serves their files to the simulator app, behind the token', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'laser-templates-')), data = stl(plate());
+    save_template(dir, 'colt_python', 'stl', data);
+    const api = make_server({ templates: dir, token: 'sesame' }), auth = { headers: { Authorization: 'Bearer sesame' } };
+    await new Promise((r) => api.listen(0, '127.0.0.1', r));
+    const at = `http://127.0.0.1:${api.address().port}/api/laser/templates`;
+    expect((await fetch(at)).status).toBe(401);
+    expect((await (await fetch(at, auth)).json()).map((t) => [t.id, t.format, t.bytes])).toEqual([['colt_python', 'stl', data.length]]);
+    const got = await fetch(`${at}/colt_python`, auth);
+    expect(got.headers.get('x-template-format')).toBe('stl');
+    expect(Buffer.compare(Buffer.from(await got.arrayBuffer()), data)).toBe(0);
+    expect((await fetch(`${at}/nope`, auth)).status).toBe(404);
+    expect((await fetch(`${at}/..%2Fsecret`, auth)).status).toBe(400);
+    expect((await fetch(`${at}/colt_python`, { ...auth, method: 'DELETE' })).status).toBe(405);
+    api.close();
+    fs.rmSync(dir, { recursive: true });
+  });
 
   it('checks the bearer token when one is set', async () => {
     const locked = make_server({ token: 'sesame' });

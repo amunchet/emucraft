@@ -1,8 +1,10 @@
 // Laser API: runs an engraving job and answers with the customer GLB (src/relief.js), a single file for a
 // three.js viewer that does not carry the solid. Plain node:http; each job runs in its own worker thread.
 //
-//   GET  /api/laser/info    presets, laser defaults and option defaults
-//   POST /api/laser/render  JSON job -> model/gltf-binary (summary in the X-Laser-Summary header)
+//   GET  /api/laser/info            presets, laser defaults and option defaults
+//   POST /api/laser/render          JSON job -> model/gltf-binary (summary in the X-Laser-Summary header)
+//   GET  /api/laser/templates       the stored templates (id, format, bytes, upload time)
+//   GET  /api/laser/templates/<id>  a template's model file, for the simulator app to load
 //
 // Job: { model: { format: 'stl' | 'obj', data: base64 } | { template: id }, image: { data: base64 PNG or JPEG },
 //   placement?: { cx, cy, angle_deg, width_mm, height_mm }, laser?: { ...DEFAULT_LASER }, supersample?,
@@ -20,8 +22,9 @@
 // down. Set LASER_SECRET to keep the factor across restarts; unset, it is new per process.
 //
 // Templates are proprietary master parts (a 1911 frame, a Colt Python) kept in LASER_TEMPLATES and engraved by id.
-// They go in and can be deleted (the MCP server, mcp.mjs) but never come back out: no route or tool reads one, a
-// render of one is always the stand-in (true_scale is refused), and nothing reports their size.
+// They go in and are deleted through the MCP server (mcp.mjs). The only way back out is GET /api/laser/templates/<id>,
+// which the simulator app loads them through behind the site's sign-in. A render of one is always the stand-in
+// (true_scale is refused), and the listing reports no size.
 //
 // Run: node server.mjs   (env: HOST=127.0.0.1, PORT=8001, LASER_JOBS=2 concurrent jobs, LASER_TIMEOUT_S=300,
 //   LASER_MAX_MB=64 request body cap, LASER_TOKEN unset = no auth, LASER_SECRET unset = random per process,
@@ -32,6 +35,7 @@ import path from 'node:path';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { Worker, parentPort, workerData } from 'node:worker_threads';
 import { fileURLToPath } from 'node:url';
+import { pipeline } from 'node:stream/promises';
 import { PNG } from 'pngjs';
 import jpeg from 'jpeg-js';
 import * as THREE from 'three';
@@ -265,9 +269,17 @@ export function make_server({ jobs = 2, timeout_s = 300, max_mb = 64, token = ''
     let slot = false;
     try {
       if (req.method === 'GET' && path === '/api/laser/info') return send(out, 200, JSON.stringify(info()), 'application/json');
-      if (path !== '/api/laser/render') return fail(out, 404, 'not found');
-      if (req.method !== 'POST') return fail(out, 405, 'use POST');
+      const read = /^\/api\/laser\/templates(?:\/([^/]+))?$/.exec(path);
+      if (path !== '/api/laser/render' && !read) return fail(out, 404, 'not found');
+      if (req.method !== (read ? 'GET' : 'POST')) return fail(out, 405, read ? 'use GET' : 'use POST');
       if (token && !same(req.headers.authorization, auth)) return fail(out, 401, 'missing or wrong bearer token');
+      if (read && !read[1]) return send(out, 200, JSON.stringify(list_templates(templates)), 'application/json');
+      if (read) {
+        const t = template_files(templates, template_id(decodeURIComponent(read[1])))[0];
+        if (!t) return fail(out, 404, `unknown template '${read[1]}'`);
+        out.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': fs.statSync(t.file).size, 'Cache-Control': 'no-store', 'X-Template-Format': t.format });
+        return await pipeline(fs.createReadStream(t.file), out);
+      }
       if (Number(req.headers['content-length']) > max_body) return fail(out, 413, `body over ${max_mb} MB`);
       if (running >= jobs) return fail(out, 503, 'busy: too many jobs running, retry shortly');
       running++;

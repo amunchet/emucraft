@@ -1,4 +1,5 @@
-# Laser engraving simulator: a static three.js app, built by Vite and served by nginx on port 80.
+# Laser engraving simulator: a static three.js app, built by Vite and served by nginx on port 80, which also passes
+# the template routes on to laser-api (nginx.conf.template).
 #   docker build -t emucraft-laser laser/
 FROM node:22-alpine AS build
 WORKDIR /app
@@ -10,5 +11,7 @@ RUN npm run build
 
 FROM nginx:1.27-alpine
 COPY --from=build /app/dist /usr/share/nginx/html
+COPY nginx.conf.template /etc/nginx/templates/default.conf.template
+ENV LASER_API_URL=http://laser-api:8001 LASER_TOKEN=
 EXPOSE 80
 HEALTHCHECK --interval=30s --timeout=5s CMD wget -q -O /dev/null http://127.0.0.1/ || exit 1
