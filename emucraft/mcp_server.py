@@ -135,8 +135,9 @@ def check_program(
                   N-m for mm). The cutting load of every cut, times wear_factor, must be held
                   safety_factor times over. The result's "workholding" gives the margin at the given
                   torque, the least torque that holds every cut (required_torque), and the weakest
-                  cut. A vise: {"fixture": "vise", "material": "steel", "grip": 0.5, "torque": 40,
-                  "force_per_torque": 100, "max_torque": 80}. Toe clamps: {"fixture": "clamps",
+                  cut. A Kurt vise: {"fixture": "vise", "vise": "d688", "material": "steel", "grip": 0.5,
+                  "torque": 40} (d688, dx6, 3600v, hd690, hdl6, scd640 self-centering); another
+                  vise: force_per_torque and max_torque instead of vise. Toe clamps: {"fixture": "clamps",
                   "material": "aluminum", "clamps": [[0.5, 0.5], [3.5, 0.5]], "bolt": 0.625,
                   "torque": 60}. Other options: safety_factor (default 2), wear_factor (1.5),
                   friction (0.15), jaw_width, axis ("y": the jaws close along Y), center, lift_stop

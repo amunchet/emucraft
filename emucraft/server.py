@@ -37,7 +37,7 @@ from .kernel import KernelError
 from .model import Config, StockSpec
 from .optimize import MATERIALS, OptimizeSpec, optimize
 from .payload import WEB, analysis_payload, b64
-from .workholding import MATERIALS as HOLD_MATERIALS, HoldSpec
+from .workholding import MATERIALS as HOLD_MATERIALS, VISES, HoldSpec
 
 EXAMPLES = Path(__file__).resolve().parent.parent / "examples"
 PROGRAM_SUFFIXES = {".nc", ".ngc", ".gcode", ".tap", ".cnc", ".txt", ".mpf", ".eia", ".min", ".h"}
@@ -192,7 +192,8 @@ class Handler(BaseHTTPRequestHandler):
                                  "optimize_defaults": asdict(OptimizeSpec()),
                                  "workholding_materials": {k: {"kc1": v[0], "mc": v[1]}
                                                            for k, v in HOLD_MATERIALS.items()},
-                                 "workholding_defaults": asdict(HoldSpec())})
+                                 "workholding_defaults": asdict(HoldSpec()),
+                                 "vises": list(VISES)})
             elif path == "/api/programs":
                 self._json(200, self._list_programs())
             elif path.startswith("/api/programs/"):

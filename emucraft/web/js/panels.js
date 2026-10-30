@@ -95,7 +95,7 @@ function sourceOf(spec, key) {
   return s.replace('program line', 'line').replace('config ', '');
 }
 
-export function renderSetup(root, report, { units, readOnly, onApply, settings, materials, holdDefaults }) {
+export function renderSetup(root, report, { units, readOnly, onApply, settings, materials, holdDefaults, vises }) {
   root.textContent = '';
   const u = units === 'mm' ? 'mm' : 'in';
   if (readOnly) root.append(el('p', { class: 'note' }, 'This is a saved report. Run `emucraft serve` to change the setup and re-check.'));
@@ -151,6 +151,8 @@ export function renderSetup(root, report, { units, readOnly, onApply, settings, 
     field('Worn tool force (×)', 'hold.wear_factor', w.wear_factor ?? d.wear_factor),
     field('Friction coefficient', 'hold.friction', w.friction ?? d.friction),
     field(`Max torque (${tu})`, 'hold.max_torque', w.max_torque ?? null),
+    field('Vise model', 'hold.vise', w.vise || '', { group: 'vise', options: [['', 'Other: force per torque'],
+      ...[...new Set([...(vises || []), ...(w.vise ? [w.vise] : [])])].map(v => [v, `Kurt ${v.toUpperCase()}`])] }),
     field(`Grip height (${u})`, 'hold.grip', w.grip ?? null, { group: 'vise', source: 'part held in the jaws' }),
     field(`Jaw width (${u})`, 'hold.jaw_width', w.jaw_width ?? null, { group: 'vise', source: 'empty: the whole part' }),
     field(`Force per torque (${fu}/${tu})`, 'hold.force_per_torque', w.force_per_torque ?? null, { group: 'vise' }),

@@ -65,6 +65,20 @@ PROOF_MPA = {"5": 586.0, "8": 827.0, "8.8": 580.0, "10.9": 830.0, "12.9": 970.0}
 
 FIXTURES = ("vise", "clamps")
 
+# Kurt 6 in vises: clamping force (lbf) at handle torque (ft-lbf), from the
+# "Manual Vise Clamping Force" table of each model's operating manual. The
+# tables end at the most torque Kurt lists; Kurt warns against handle
+# extensions, impact wrenches and hammers.
+VISES: Dict[str, List[Tuple[float, float]]] = {
+    "d688": [(10, 1129), (20, 2242), (30, 3337), (40, 4148), (50, 5379), (60, 6310), (70, 6977), (80, 7968)],
+    "dx6": [(10, 512), (20, 1487), (30, 2464), (40, 3440), (50, 4415), (60, 5391), (70, 6367), (80, 7342)],
+    "3600v": [(10, 653), (20, 1743), (30, 2234), (40, 3015), (50, 3833), (60, 4438), (70, 5528), (80, 6356)],
+    "hd690": [(10, 975), (20, 1625), (30, 2400), (40, 3250), (50, 3700), (60, 4275), (70, 4700), (80, 5250)],
+    "hdl6": [(10, 1540), (20, 2520), (30, 3350), (40, 4310), (50, 5750), (60, 6860), (70, 7460)],
+    "scd640": [(10, 975), (20, 1750), (30, 2575), (40, 3750), (50, 4375), (60, 5750)],  # self-centering
+}
+VISE_JAW = 6.0  # in
+
 
 @dataclass
 class HoldSpec:
@@ -86,6 +100,7 @@ class HoldSpec:
     max_torque: Optional[float] = None
     axis: str = "y"  # vise: the direction the jaws close
     force_per_torque: Optional[float] = None  # vise: N of clamping force per N*m on the handle
+    vise: Optional[str] = None  # a vise model of VISES: its force-torque table replaces force_per_torque
     jaw_width: Optional[float] = None  # vise: jaw length (default: the whole part is gripped)
     grip: Optional[float] = None  # vise: height of the part held in the jaws, from its bottom
     center: Optional[float] = None  # vise: the jaws' middle along the jaws (default: the part's)
@@ -101,18 +116,27 @@ class HoldSpec:
             return self.kc1, self.mc if self.mc is not None else 0.25
         return MATERIALS[self.material]
 
-    def per_torque(self) -> Optional[float]:
-        """Clamping force (N) per N*m of torque, when the fixture says."""
-        if self.fixture == "vise":
-            return self.force_per_torque
-        if self.bolt:
-            return self.lever / (self.nut_factor * self.bolt / 1000.0)
-        return None
+    def curve(self) -> Optional[List[Tuple[float, float]]]:
+        """(N*m, N) points from no torque up, when the fixture says how torque
+        becomes clamping force."""
+        if self.vise and self.fixture == "vise":
+            return [(0.0, 0.0)] + [(t * NM_PER_FTLBF, f * N_PER_LBF) for t, f in VISES[self.vise]]
+        k = self.force_per_torque if self.fixture == "vise" else (
+            self.lever / (self.nut_factor * self.bolt / 1000.0) if self.bolt else None)
+        return None if k is None else [(0.0, 0.0), (1.0, k)]
+
+    def force_at(self, torque: float) -> float:
+        return _interpolate(self.curve(), torque, 0, 1)
+
+    def torque_for(self, force: float) -> float:
+        return _interpolate(self.curve(), force, 1, 0)
 
     def limit(self) -> Optional[float]:
-        """Most torque the fixture takes: max_torque, else what preloads the
-        bolt to 75 % of its proof load, the usual ceiling for a joint that is
-        undone again."""
+        """Most torque the fixture takes: max_torque, else the top of the vise
+        maker's table, else what preloads the bolt to 75 % of its proof load,
+        the usual ceiling for a joint that is undone again."""
+        if self.max_torque is None and self.vise and self.fixture == "vise":
+            return VISES[self.vise][-1][0] * NM_PER_FTLBF
         if self.max_torque is not None or not self.bolt_area:
             return self.max_torque
         proof = PROOF_MPA[self.bolt_grade or "5"]
@@ -121,7 +145,16 @@ class HoldSpec:
         return self.nut_factor * 0.75 * proof * self.bolt_area * self.bolt / 1000.0
 
 
-_TEXT = ("fixture", "material", "axis", "bolt_grade")
+def _interpolate(points: List[Tuple[float, float]], x: float, a: int, b: int) -> float:
+    """Piecewise-linear lookup of coordinate b at coordinate a = x, the end
+    segments extended."""
+    for p, q in zip(points, points[1:]):
+        if x <= q[a] or q is points[-1]:
+            return p[b] + (x - p[a]) * (q[b] - p[b]) / (q[a] - p[a])
+    raise ValueError("empty curve")
+
+
+_TEXT = ("fixture", "material", "axis", "bolt_grade", "vise")
 _LENGTHS = ("jaw_width", "grip", "center")
 _NUMBERS = ("kc1", "mc", "safety_factor", "wear_factor", "radial_ratio", "axial_ratio", "friction", "nut_factor",
             "lever")
@@ -147,7 +180,7 @@ def apply_values(spec: HoldSpec, values: Dict[str, object], units: str, factor: 
         if key in _TEXT:
             value = str(value).lower()
             allowed = {"fixture": FIXTURES, "material": tuple(MATERIALS), "axis": ("x", "y"),
-                       "bolt_grade": tuple(PROOF_MPA)}[key]
+                       "bolt_grade": tuple(PROOF_MPA), "vise": tuple(VISES)}[key]
             if value not in allowed:
                 raise ValueError(f"workholding {key} must be one of {', '.join(allowed)}, not '{value}'")
             setattr(spec, key, value)
@@ -211,9 +244,11 @@ def hold_spec(config: Config, units: str, overrides: Optional[Dict[str, object]]
             raise ValueError("a vise needs grip: the height of the part held in the jaws")
         if spec.jaw_width is not None and not spec.jaw_width > 0:
             raise ValueError("workholding jaw_width must be positive")
-        if spec.torque is not None and spec.force_per_torque is None:
-            raise ValueError("a vise torque needs force_per_torque, the vise's clamping force per unit of "
-                             "handle torque (or give the clamping force instead)")
+        if spec.torque is not None and spec.curve() is None:
+            raise ValueError("a vise torque needs the vise model (vise) or force_per_torque, its clamping "
+                             "force per unit of handle torque (or give the clamping force instead)")
+        if spec.vise and spec.jaw_width is None:
+            spec.jaw_width = VISE_JAW * unit_factor("inch", units)
     elif not spec.clamps:
         raise ValueError("clamps need their positions: clamps = [[x, y], ...]")
     elif spec.torque is not None and spec.bolt is None:
@@ -424,6 +459,7 @@ def analyze(program: Program, tools: Dict[int, ToolSpec], stock: StockSpec, grid
         "radial_ratio": spec.radial_ratio,
         "axial_ratio": spec.axial_ratio,
         "axis": spec.axis,
+        "vise": spec.vise,
         "force_per_torque": None if spec.force_per_torque is None else float(
             f"{spec.force_per_torque * f_out / t_out:.9g}"),
         "grip": spec.grip,
@@ -435,9 +471,9 @@ def analyze(program: Program, tools: Dict[int, ToolSpec], stock: StockSpec, grid
         "nut_factor": spec.nut_factor,
         "lever": spec.lever,
     }
-    per_torque = spec.per_torque()
+    per_torque = spec.curve() is not None
     applied = spec.force if spec.force is not None else (
-        spec.torque * per_torque if spec.torque is not None else None)
+        spec.force_at(spec.torque) if spec.torque is not None else None)
     limit = spec.limit()
     if applied is not None:
         report["force"] = applied * f_out
@@ -456,7 +492,7 @@ def analyze(program: Program, tools: Dict[int, ToolSpec], stock: StockSpec, grid
     if s_min > 0:
         report["required_force"] = need * f_out
         if per_torque:
-            report["required_torque"] = need / per_torque * t_out
+            report["required_torque"] = spec.torque_for(need) * t_out
     report["worst"] = {
         "line": program.line[i] + 1,
         "move": i,
@@ -500,8 +536,8 @@ def analyze(program: Program, tools: Dict[int, ToolSpec], stock: StockSpec, grid
             issues.append(issue(group))
     elif not s_min > 0:
         issues.append(issue([(load, 0.0, mode)], f"No clamping force holds this cut: the part {mode}"))
-    elif limit is not None and per_torque and need / per_torque > limit * (1 + 1e-9):
+    elif limit is not None and per_torque and spec.torque_for(need) > limit * (1 + 1e-9):
         issues.append(issue([(load, 0.0, mode)],
-                            f"Holding this cut needs {need / per_torque * t_out:.0f} {t_unit}, more than the "
+                            f"Holding this cut needs {spec.torque_for(need) * t_out:.0f} {t_unit}, more than the "
                             f"{limit * t_out:.0f} {t_unit} the fixture takes (the part {mode})"))
     return issues, messages, report

@@ -269,3 +269,22 @@ def test_cli_report(tmp_path, capsys):
     data = json.loads((tmp_path / "out.json").read_text())
     assert data["workholding"]["torque"] == 20 and data["workholding"]["max_torque"] == 80
     assert [i["kind"] for i in data["issues"]] == ["workholding"]
+
+
+def test_kurt_vise_from_its_manual_table():
+    """vise = "d688": the manual's force at the torque, its 6 in jaws and 80 ft-lbf top."""
+    r = hold(material="steel", vise="D688", grip=0.5, torque=40)
+    w = r.workholding
+    assert w["force"] == pytest.approx(4148)  # straight off the table
+    assert hold(material="steel", vise="d688", grip=0.5, torque=45).workholding["force"] == pytest.approx(
+        (4148 + 5379) / 2)
+    assert (w["max_torque"], w["jaw_width"], w["vise"]) == (pytest.approx(80), pytest.approx(6.0), "d688")
+    # the curve is not linear: the requirement is read back off it, and holds exactly
+    need = w["required_torque"]
+    assert hold(material="steel", vise="d688", grip=0.5, torque=need).workholding["margin"] == pytest.approx(2.0)
+
+
+def test_self_centering_vise_stops_at_60_ft_lbf():
+    r = hold(material="steel", vise="scd640", grip=0.5, torque=70)
+    assert r.workholding["max_torque"] == pytest.approx(60)
+    assert "workholding-torque" in [m.code for m in r.messages if m.level == "error"]

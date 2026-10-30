@@ -202,11 +202,12 @@ units = "inch"              # lengths in inches, forces in lbf, torques in ft-lb
 [workholding]
 material = "steel"          # see the table below; default: [optimize] material
 fixture = "vise"
+vise = "d688"               # a Kurt 6 in vise (table below): its force curve, 6 in jaws and torque limit
 grip = 0.5                  # height of the part held in the jaws, from its bottom
 torque = 40                 # handle torque you apply (leave out to just get the requirement)
-force_per_torque = 100      # the vise maker's clamping force per ft-lbf on the handle
-max_torque = 80             # the vise maker's maximum
-# jaw_width = 6             # default: the jaws grip the whole length of the part
+# force_per_torque = 100    # any other vise: its clamping force per ft-lbf on the handle
+# max_torque = 80           #   and its maker's maximum
+# jaw_width = 6             # default: 6 for a Kurt model, else the whole length of the part
 # axis = "y"                # direction the jaws close
 # safety_factor = 2         # required margin on the worn-tool load
 # wear_factor = 1.5         # cutting force of a worn tool over a sharp one
@@ -266,9 +267,30 @@ clamping force:
 
 The **margin** is how many times the worn-tool load the fixture holds; it must
 reach `safety_factor`. Because holding scales with the clamping force, the
-required torque is `torque x safety_factor / margin`. The **fixture limit** is
-`max_torque` if you give it, else for clamps the torque that loads the bolt to
-75 % of its proof load (the usual ceiling for a joint that is undone again). A
+required force is `force x safety_factor / margin`, turned back into a torque
+through the vise's curve or the bolt formula. The **fixture limit** is
+`max_torque` if you give it, else the top of a Kurt vise's table, else for
+clamps the torque that loads the bolt to 75 % of its proof load (the usual
+ceiling for a joint that is undone again).
+
+Kurt 6 in vises, from the clamping force tables in Kurt's operating manuals
+(force in lbf at handle torque in ft-lbf; between the rows the force is
+interpolated, and the last row is the limit). Kurt warns that handle
+extensions, impact wrenches, breaker bars and hammer strikes damage the screw
+and thrust bearing and void the warranty: past the table, get a bigger vise.
+
+| `vise` | 10 | 20 | 30 | 40 | 50 | 60 | 70 | 80 ft-lbf |
+|---|---|---|---|---|---|---|---|---|
+| `d688` (AngLock) | 1129 | 2242 | 3337 | 4148 | 5379 | 6310 | 6977 | 7968 |
+| `dx6` (CrossOver) | 512 | 1487 | 2464 | 3440 | 4415 | 5391 | 6367 | 7342 |
+| `3600v` (VersatileLock) | 653 | 1743 | 2234 | 3015 | 3833 | 4438 | 5528 | 6356 |
+| `hd690` (AngLock, pull type) | 975 | 1625 | 2400 | 3250 | 3700 | 4275 | 4700 | 5250 |
+| `hdl6` | 1540 | 2520 | 3350 | 4310 | 5750 | 6860 | 7460 | |
+| `scd640` (self-centering) | 975 | 1750 | 2575 | 3750 | 4375 | 5750 | | |
+
+The self-centering SCD640's figure is the squeeze on the part between its two
+jaws (both jaws move, the force is not doubled), and its table stops at 60
+ft-lbf. A
 requirement above the limit means the job cannot be held safely by friction:
 use a positive stop or dovetail, lighter cuts, or other workholding.
 
@@ -288,8 +310,8 @@ These are typical published Kienzle values for each family, as tool makers'
 catalogues tabulate them; give `kc1` and `mc` for your exact alloy. Check the
 defaults against your own data too: friction 0.15 suits smooth, dry or oiled
 steel jaws (serrated jaws grip better, coolant lowers it); the vise's
-`force_per_torque` and maximum come from its maker (a 6 in mechanical vise is
-typically around 100 lbf per ft-lbf).
+`force_per_torque` and maximum come from its maker (the Kurt 6 in vises run
+from about 65 to 107 lbf per ft-lbf at the top of their tables).
 
 What it needs and assumes:
 

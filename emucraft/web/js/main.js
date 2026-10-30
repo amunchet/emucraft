@@ -304,7 +304,7 @@ class App {
     });
     renderSetup($('tab-setup'), r, {
       units: this.units, readOnly: !!EMBED, settings: this.settings,
-      materials: this.info?.workholding_materials, holdDefaults: this.info?.workholding_defaults,
+      materials: this.info?.workholding_materials, holdDefaults: this.info?.workholding_defaults, vises: this.info?.vises,
       onApply: changes => {
         let next = {};
         if (changes) {
