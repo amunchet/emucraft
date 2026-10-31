@@ -163,7 +163,7 @@ def _rule_target(section: str, target) -> str:
 
 
 def config_from_dict(data: Dict[str, Any]) -> Config:
-    top = {"units", "machine", "check", "stock", "tools", "default_tool", "optimize",
+    top = {"units", "machine", "check", "stock", "tools", "default_tool", "optimize", "workholding",
            "comment_rules", "variable_rules", "comment_aliases"}
     _check_keys("top level", data, top)
     cfg = Config()
@@ -212,6 +212,16 @@ def config_from_dict(data: Dict[str, Any]) -> Config:
         if not isinstance(optimize, dict):
             raise ConfigError("[optimize] must be a table")
         cfg.optimize = dict(optimize)
+        if "workholding" in data:
+            from .workholding import hold_spec
+
+            if not isinstance(data["workholding"], dict):
+                raise ConfigError("[workholding] must be a table")
+            cfg.workholding = dict(data["workholding"])
+            try:
+                hold_spec(cfg, cfg.units or "inch")
+            except ValueError as exc:
+                raise ConfigError(f"[workholding] {exc}") from None
         for rule in data.get("comment_rules") or []:
             _check_keys("comment_rules", rule, {"pattern", "field"})
             if not isinstance(rule.get("pattern"), str) or "field" not in rule:

@@ -42,7 +42,8 @@ server = MCPServer(
         "the machine. Tool and stock sizes come from CAM comments; program_info shows what was read "
         "and from which line. When a value is missing or misread, tune detection with update_settings "
         "(comment_aliases, comment_rules, variable_rules, check.fuzz_threshold) or pass tools / stock "
-        "to check_program."
+        "to check_program. Pass workholding (vise or toe clamps, part material, torque) to check_program "
+        "to learn whether the cutting forces can move the part and what torque holds it."
     ),
 )
 
@@ -114,20 +115,34 @@ def check_program(
     stock: Optional[List[float]] = None,
     tools: Optional[Dict[str, Dict[str, Any]]] = None,
     resolution: Optional[float] = None,
+    workholding: Optional[Dict[str, Any]] = None,
 ) -> dict:
-    """Simulate a G-code program and report collisions.
+    """Simulate a G-code program and report collisions, and whether the vise or clamps hold the part.
 
     status is "pass", "warn" or "fail". Each issue has a kind (rapid-cut, spindle-off-cut, holder,
-    shank, table, link-cut, travel, tool), the 1-based source lines and the worst position/depth.
-    messages lists what the interpreter could not simulate. tools shows the geometry used and
-    where every value came from.
+    shank, table, link-cut, travel, tool, workholding), the 1-based source lines and the worst
+    position/depth. messages lists what the interpreter could not simulate. tools shows the geometry
+    used and where every value came from.
 
-    stock      - [xmin, ymin, zmin, xmax, ymax, zmax] in program units, instead of the CAM header.
-    tools      - per-tool overrides in program units, e.g. {"20": {"holder_diameter": 1.3,
-                 "stickout": 1.4}} or {"*": {...}} for every tool. Fields: diameter, shape
-                 (flat/ball/bull/cone), corner_radius, tip_angle, flute_length, shank_diameter,
-                 stickout, holder_diameter, holder_length.
-    resolution - simulation cell size in program units (default picks ~6 million cells).
+    stock       - [xmin, ymin, zmin, xmax, ymax, zmax] in program units, instead of the CAM header.
+    tools       - per-tool overrides in program units, e.g. {"20": {"holder_diameter": 1.3,
+                  "stickout": 1.4}} or {"*": {...}} for every tool. Fields: diameter, shape
+                  (flat/ball/bull/cone), corner_radius, tip_angle, flute_length, shank_diameter,
+                  stickout, holder_diameter, holder_length, flutes.
+    resolution  - simulation cell size in program units (default picks ~6 million cells).
+    workholding - fixture and cutting-force options laid over the config's [workholding], in
+                  program units, with forces and torques in lbf and ft-lbf for inch programs (N and
+                  N-m for mm). The cutting load of every cut, times wear_factor, must be held
+                  safety_factor times over. The result's "workholding" gives the margin at the given
+                  torque, the least torque that holds every cut (required_torque), and the weakest
+                  cut. A Kurt vise: {"fixture": "vise", "vise": "d688", "material": "steel", "grip": 0.5,
+                  "torque": 40} (d688, dx6, 3600v, hd690, hdl6, scd640 self-centering); another
+                  vise: force_per_torque and max_torque instead of vise. Toe clamps: {"fixture": "clamps",
+                  "material": "aluminum", "clamps": [[0.5, 0.5], [3.5, 0.5]], "bolt": 0.625,
+                  "torque": 60}. Other options: safety_factor (default 2), wear_factor (1.5),
+                  friction (0.15), jaw_width, axis ("y": the jaws close along Y), center, lift_stop
+                  (a dovetail or step holds the part down), force (instead of torque), nut_factor,
+                  bolt_grade, lever, kc1 and mc (a material of your own), radial_ratio, axial_ratio.
     """
     text, name, config, source = _load(path, gcode, config_path)
     if stock is not None and len(stock) != 6:
@@ -144,6 +159,7 @@ def check_program(
             overrides=overrides,
             stock=StockSpec(*map(float, stock), source="override") if stock else None,
             cell=resolution,
+            workholding=workholding,
         )
     except (KernelError, ValueError) as exc:
         raise ToolError(str(exc)) from None
@@ -213,8 +229,9 @@ def update_settings(changes: Dict[str, Any]) -> dict:
     """Change the saved settings (an emucraft JSON config) used when no other config applies.
 
     Top-level keys: comment_aliases, comment_rules, variable_rules, check, machine, stock, tools,
-    default_tool, units. Tables (comment_aliases, variable_rules, check, machine, tools,
-    default_tool) are merged key by key; anything else is replaced. A null value removes a key.
+    default_tool, workholding, units. Tables (comment_aliases, variable_rules, check, machine, tools,
+    default_tool, workholding) are merged key by key; anything else is replaced. A null value
+    removes a key. workholding takes the options of check_program's workholding, in `units`.
     Lengths are in `units` ("inch" or "mm"; default: the program's units). Example:
     {"comment_aliases": {"tool.holder_length": ["holder length", "gauge from holder"]},
      "check": {"fuzz_threshold": 0.9}, "default_tool": {"holder_diameter": 1.5}}

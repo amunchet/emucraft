@@ -4,7 +4,7 @@ import { el, fmtClock, fmtLen, toolColor } from './util.js';
 const KIND_LABEL = {
   'rapid-cut': 'Rapid into material', 'spindle-off-cut': 'Spindle stopped', 'link-cut': 'Link move cutting',
   shank: 'Shank / flute length', holder: 'Holder collision', table: 'Below table', travel: 'Travel limit',
-  tool: 'Missing tool data',
+  tool: 'Missing tool data', workholding: 'Workholding',
 };
 
 function icon(markup) {
@@ -21,6 +21,32 @@ function lines(issue) {
 export function renderIssues(root, report, { onIssue, onLine, selected }) {
   root.textContent = '';
   const issues = report.issues;
+  const w = report.workholding;
+  if (w) {
+    const fu = w.units.force, tu = w.units.torque, sf = w.safety_factor;
+    const num = v => v.toLocaleString(undefined, { maximumFractionDigits: v < 10 ? 1 : 0 });
+    const over = w.required_torque !== null && w.max_torque !== null && w.required_torque > w.max_torque;
+    const held = w.worst === null || (w.margin === null ? w.required_force !== null && !over : w.margin >= sf);
+    const verdict = w.force === null && held ? 'info' : held ? 'ok' : 'error';
+    const worst = w.worst;
+    root.append(el('div', { class: `hold ${verdict}` },
+      el('div', { class: 'kind' }, `Workholding · ${w.fixture === 'vise' ? 'vise' : 'toe clamps'} · ${w.material || `kc1 ${w.kc1}`}`),
+      el('div', { class: 'note' }, `Worn tool ×${w.wear_factor}, safety factor ×${sf}, friction ${w.friction}`),
+      w.force !== null ? el('div', {},
+        `${w.torque !== null ? `${num(w.torque)} ${tu} → ` : ''}${num(w.force)} ${fu}: `,
+        w.margin === null ? el('b', {}, 'holds every cut')
+          : el('b', {}, `margin ${w.margin.toFixed(2)}× ${w.margin >= sf ? '≥' : '<'} ${sf}×`)) : null,
+      el('div', {}, w.worst === null ? 'No cut loads the part'
+        : w.required_force === null ? el('b', {}, 'No clamping force holds the part')
+          : ['Least that holds every cut: ', el('b', {}, w.required_torque !== null
+            ? `${num(w.required_torque)} ${tu}` : `${num(w.required_force)} ${fu}`),
+            w.required_torque !== null ? ` (${num(w.required_force)} ${fu})` : '']),
+      w.max_torque !== null ? el('div', { class: over ? 'problem' : 'note' }, `The fixture takes up to ${num(w.max_torque)} ${tu}`) : null,
+      worst ? el('div', { class: 'msg', onclick: () => onLine(worst.line - 1) },
+        el('span', { class: 'where' }, `line ${worst.line}`),
+        `Weakest cut: T${worst.tool} pushes ${num(worst.side_force)} ${fu} sideways`,
+        worst.lift > 0 ? ` and lifts ${num(worst.lift)} ${fu}` : '', `; the part ${worst.mode}`) : null));
+  }
   if (!issues.length) {
     root.append(el('div', { class: 'all-clear' },
       icon('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m7 12.5 3.2 3.2L17 9"/></svg>'),
@@ -51,7 +77,7 @@ export function renderIssues(root, report, { onIssue, onLine, selected }) {
   }
 }
 
-function field(label, name, value, { step = 'any', source, type = 'number', options, wide } = {}) {
+function field(label, name, value, { step = 'any', source, type = 'number', options, wide, group } = {}) {
   let input;
   if (options) {
     input = el('select', { name }, options.map(([v, t]) => el('option', { value: v, selected: v === value }, t)));
@@ -59,7 +85,8 @@ function field(label, name, value, { step = 'any', source, type = 'number', opti
     input = el('input', { name, type, step, value: value ?? '', placeholder: value == null ? '—' : null });
   }
   input.dataset.original = input.value;
-  return el('label', { class: wide ? 'wide' : null }, label, input, source ? el('span', { class: 'src' }, source) : null);
+  return el('label', { class: wide ? 'wide' : null, dataset: group ? { group } : null }, label, input,
+    source ? el('span', { class: 'src' }, source) : null);
 }
 
 function sourceOf(spec, key) {
@@ -68,7 +95,7 @@ function sourceOf(spec, key) {
   return s.replace('program line', 'line').replace('config ', '');
 }
 
-export function renderSetup(root, report, { units, readOnly, onApply, settings }) {
+export function renderSetup(root, report, { units, readOnly, onApply, settings, materials, holdDefaults, vises }) {
   root.textContent = '';
   const u = units === 'mm' ? 'mm' : 'in';
   if (readOnly) root.append(el('p', { class: 'note' }, 'This is a saved report. Run `emucraft serve` to change the setup and re-check.'));
@@ -97,7 +124,8 @@ export function renderSetup(root, report, { units, readOnly, onApply, settings }
       field('Flute length', 'flute_length', spec.flute_length, { source: sourceOf(spec, 'flute_length') }),
       field('Stick-out', 'stickout', spec.stickout, { source: sourceOf(spec, 'stickout') }),
       field('Holder diameter', 'holder_diameter', spec.holder_diameter, { source: sourceOf(spec, 'holder_diameter') }),
-      field('Shank diameter', 'shank_diameter', spec.shank_diameter, { source: sourceOf(spec, 'shank_diameter') })));
+      field('Shank diameter', 'shank_diameter', spec.shank_diameter, { source: sourceOf(spec, 'shank_diameter') }),
+      field('Flutes', 'flutes', spec.flutes, { step: 1, source: sourceOf(spec, 'flutes') })));
     form.append(card);
   }
 
@@ -107,6 +135,43 @@ export function renderSetup(root, report, { units, readOnly, onApply, settings }
     field(`Table / fixture Z`, 'table_z', report.machine.table_z),
     field(`Link feed ≥ (${u}/min)`, 'link_feed', report.stats.link_feed ?? null, { source: 'feed moves this fast must not cut; empty: off' }),
     field(`Resolution (${u})`, 'resolution', report.grid?.cell, { source: report.grid ? `${report.grid.nx} × ${report.grid.ny} cells` : null })));
+
+  // workholding: what the config set, else the defaults; only changes are sent
+  const w = report.workholding || {}, d = holdDefaults || {};
+  const fu = units === 'mm' ? 'N' : 'lbf', tu = units === 'mm' ? 'N-m' : 'ft-lbf';
+  const names = Object.keys(materials || {});
+  if (w.material && !names.includes(w.material)) names.push(w.material);
+  form.append(el('h3', {}, 'Workholding'));
+  const hold = el('div', { class: 'form' },
+    field('Fixture', 'hold.fixture', w.fixture || '', { options: [['', 'Off'], ['vise', 'Vise'], ['clamps', 'Toe clamps']] }),
+    field('Part material', 'hold.material', w.material || '', { options: [['', '—'], ...names.map(m => [m, m.replace('_', ' ')])] }),
+    field(`Torque (${tu})`, 'hold.torque', w.torque ?? null, { source: 'vise handle, or each clamp bolt' }),
+    field(`or clamping force (${fu})`, 'hold.force', w.torque == null ? w.force ?? null : null),
+    field('Safety factor (×)', 'hold.safety_factor', w.safety_factor ?? d.safety_factor),
+    field('Worn tool force (×)', 'hold.wear_factor', w.wear_factor ?? d.wear_factor),
+    field('Friction coefficient', 'hold.friction', w.friction ?? d.friction),
+    field(`Max torque (${tu})`, 'hold.max_torque', w.max_torque ?? null),
+    field('Vise model', 'hold.vise', w.vise || '', { group: 'vise', options: [['', 'Other: force per torque'],
+      ...[...new Set([...(vises || []), ...(w.vise ? [w.vise] : [])])].map(v => [v, `Kurt ${v.toUpperCase()}`])] }),
+    field(`Grip height (${u})`, 'hold.grip', w.grip ?? null, { group: 'vise', source: 'part held in the jaws' }),
+    field(`Jaw width (${u})`, 'hold.jaw_width', w.jaw_width ?? null, { group: 'vise', source: 'empty: the whole part' }),
+    field(`Force per torque (${fu}/${tu})`, 'hold.force_per_torque', w.force_per_torque ?? null, { group: 'vise' }),
+    field('Jaws close along', 'hold.axis', w.axis || 'y', { group: 'vise', options: [['y', 'Y'], ['x', 'X']] }),
+    field(`Clamp positions (${u})`, 'hold.clamps', (w.clamps || []).map(p => p.join(', ')).join('; '),
+      { type: 'text', wide: true, group: 'clamps', source: 'X, Y where each clamp presses; separate clamps with ;' }),
+    field(`Bolt diameter (${u})`, 'hold.bolt', w.bolt ?? null, { group: 'clamps' }),
+    field('Nut factor', 'hold.nut_factor', w.nut_factor ?? d.nut_factor, { group: 'clamps' }),
+    field('Bolt force on the part (×)', 'hold.lever', w.lever ?? d.lever, { group: 'clamps', source: 'heel distance / heel-to-part' }),
+    field('Lift held positively', 'hold.lift_stop', String(w.lift_stop ?? false), { wide: true, options: [['false', 'No'], ['true', 'Yes: dovetail, step jaws or bolts']] }));
+  const fixture = hold.querySelector('[name="hold.fixture"]');
+  const showGroups = () => {
+    for (const label of hold.querySelectorAll('label')) {
+      label.hidden = !fixture.value ? label !== fixture.parentElement : !!label.dataset.group && label.dataset.group !== fixture.value;
+    }
+  };
+  fixture.addEventListener('change', showGroups);
+  showGroups();
+  form.append(hold);
   if (!readOnly) {
     form.append(el('div', { class: 'actions' },
       el('button', { class: 'btn primary', type: 'submit' }, 'Re-check'),
@@ -148,6 +213,16 @@ function collect(form) {
     if (!changed(input)) continue;
     // an emptied link feed turns the check off (0); other fields fall back to the program
     out[name] = value(input) ?? (name === 'link_feed' ? 0 : null);
+  }
+  if (form.querySelector('[name="hold.fixture"]').value) {
+    for (const input of form.querySelectorAll('[name^="hold."]')) {
+      if (!changed(input)) continue;
+      const key = input.name.slice(5);
+      let v = value(input);
+      if (key === 'clamps') v = input.value.split(';').map(p => p.split(',').map(Number)).filter(p => p.length === 2 && p.every(Number.isFinite));
+      else if (key === 'lift_stop') v = input.value === 'true';
+      if (v !== null && v !== '') (out.workholding ||= {})[key] = v;
+    }
   }
   return out;
 }
