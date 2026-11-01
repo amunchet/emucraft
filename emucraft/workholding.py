@@ -15,7 +15,9 @@ The fixture holds by friction:
   against the force in their plane: along the jaws and upwards. A moment
   about the clamping axis rocks the part over the floor (parallels) at the
   far end of the jaws, so it adds to the upward force the jaws must hold.
-  The fixed jaw, the screw and the floor carry everything else.
+  The cutter's torque turns the part about Z against the jaws' friction
+  (combined linearly with sliding). The fixed jaw, the screw and the floor
+  carry everything else.
 * clamps: toe clamps press the part onto the table over its supports.
   Friction under the part and under the clamp tips resists sliding and
   turning (combined linearly, F/Fmax + M/Mmax <= 1, which stays inside the
@@ -78,6 +80,7 @@ VISES: Dict[str, List[Tuple[float, float]]] = {
     "scd640": [(10, 975), (20, 1750), (30, 2575), (40, 3750), (50, 4375), (60, 5750)],  # self-centering
 }
 VISE_JAW = 6.0  # in
+
 
 
 @dataclass
@@ -379,20 +382,29 @@ def analyze(program: Program, tools: Dict[int, ToolSpec], stock: StockSpec, grid
         if spec.grip > stock.zmax - stock.zmin + 1e-9:
             raise ValueError("the vise grip is taller than the part")
         span, mid, z_mid = hi - lo, (lo + hi) / 2.0, stock.zmin + spec.grip / 2.0
+        a, d = span / 2.0, ((stock.ymax - stock.ymin) if along == 0 else (stock.xmax - stock.xmin)) / 2.0
+        # the cutter's torque turns the part about Z in the middle of the jaws
+        # against friction alone, each jaw's acting at the mean distance of its
+        # face from there (the side force's moment is left to the jaws squaring
+        # the part, as for rocking about the clamping axis)
+        arm = (a * math.hypot(a, d) + d * d * math.asinh(a / d)) / (2.0 * a) if d > 0 else a / 2.0
 
         def holding(load: _Load) -> Tuple[float, str]:
-            if spec.lift_stop:
-                return 2.0 * mu / load.side if load.side > 0 else math.inf, "slides along the jaws"
             p = fpts[3 * load.piece + 3 + along]
-            r = tools[ftools[load.piece]].diameter / 2.0
-            # rocking about the clamping axis: the floor under the far end of the
-            # jaws takes the moment, and the jaws must hold the near end down
-            rock = 2.0 * (load.side * abs(load.height - z_mid) + load.lift * (abs(p - mid) + r)) / span
-            up = load.lift + rock
-            mode = ("slides along the jaws" if load.side >= up else
+            if spec.lift_stop:
+                up = rock = 0.0
+            else:
+                r = tools[ftools[load.piece]].diameter / 2.0
+                # rocking about the clamping axis: the floor under the far end of the
+                # jaws takes the moment, and the jaws must hold the near end down
+                rock = 2.0 * (load.side * abs(load.height - z_mid) + load.lift * (abs(p - mid) + r)) / span
+                up = load.lift + rock
+            # sliding and turning combined linearly, like the clamps
+            force = math.hypot(load.side, up)
+            turn = load.torque / arm
+            mode = ("turns in the jaws" if turn > force else "slides along the jaws" if load.side >= up else
                     "rocks in the jaws" if rock > load.lift else "pulls out of the jaws")
-            force = math.hypot(load.side, up)  # drilling: the jaws and floor take it all
-            return 2.0 * mu / force if force > 0 else math.inf, mode
+            return 2.0 * mu / (force + turn) if force + turn > 0 else math.inf, mode
     else:
         pts = spec.clamps
         tol = 1e-6 * max(1.0, abs(stock.xmax), abs(stock.ymax))

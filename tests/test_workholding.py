@@ -92,13 +92,46 @@ def test_vise_rocking_is_worst_at_the_ends_of_the_jaws():
     assert short["required_force"] > w["required_force"]
 
 
-def test_lift_stop_leaves_only_sliding():
+def jaw_arm(a, d):
+    """Mean distance from the middle of the jaws to a jaw face 2a long, d away."""
+    return (a * math.hypot(a, d) + d * d * math.asinh(a / d)) / (2 * a)
+
+
+def test_lift_stop_leaves_sliding_and_turning():
     """With the lift held positively, the jaws only have to stop the side force
-    sliding: 2 * friction * force >= safety factor * side force."""
+    sliding and the cutter's torque turning the part, combined linearly:
+    2 * friction * force >= safety factor * (side + torque / arm)."""
     w = hold(**VISE, lift_stop=True).workholding
-    side = slot_tangential() * math.sqrt(1.25)
+    tangential = slot_tangential()
+    side, turn = tangential * math.sqrt(1.25), tangential * 0.25 / jaw_arm(2.0, 1.0)
     assert w["worst"]["mode"] == "slides along the jaws"
-    assert w["required_force"] * N_PER_LBF == pytest.approx(2.0 * side / (2 * 0.15), rel=0.01)
+    assert w["required_force"] * N_PER_LBF == pytest.approx(2.0 * (side + turn) / (2 * 0.15), rel=0.01)
+
+
+def test_a_drill_can_turn_the_part_in_short_jaws():
+    """A drill pushes neither sideways nor up, but its torque turns the part
+    against the jaws' friction: short jaws need more force than long ones."""
+    text = BLOCK + """( Tool Number: 2)
+( Tool:   Drill)
+( DIAMETER: 1.0)
+G20 G17 G90
+T2 M6
+S300 M3
+G0 X2. Y1. Z0.1
+G81 Z-0.75 R0.1 F3.
+G80
+M30
+"""
+    options = {**VISE, "vise": "d688", "force_per_torque": None, "max_torque": None, "lift_stop": True}
+    short = hold(text, **options, jaw_width=0.3, torque=5)
+    w = short.workholding
+    assert w["worst"]["mode"] == "turns in the jaws" and w["worst"]["side_force"] == 0
+    torque = w["worst"]["cutting_torque"] * NM_PER_FTLBF * 1000 / 25.4  # N*in
+    assert w["required_force"] * N_PER_LBF == pytest.approx(2.0 * torque / jaw_arm(0.15, 1.0) / (2 * 0.15),
+                                                            rel=1e-6)
+    assert short.status == "fail" and "turns in the jaws" in short.issues[0].message
+    full = hold(text, **options, torque=40).workholding
+    assert full["required_force"] < w["required_force"] and full["margin"] > 2
 
 
 def test_jaws_closing_along_x():

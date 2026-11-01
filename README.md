@@ -230,12 +230,12 @@ torque = 60                 # on each nut
 ```console
 $ emucraft check part.nc
 FAIL  0 collisions, 1 workholding failure
-  x line 20          workholding      Cutting load can move the part: it rocks in the jaws (holding margin 1.87x, needs 2x); T1 pushes 399 lbf sideways and lifts 179 lbf  at X0.0000 Y1.0000 Z-0.2500
+  x line 17          workholding      Cutting load can move the part: it rocks in the jaws (holding margin 1.77x, needs 2x); T1 pushes 399 lbf sideways and lifts 179 lbf  at X0.0000 Y1.0000 Z-0.2500
 
 Workholding: vise, steel, worn tool x1.5, safety factor 2, friction 0.15
-  weakest cut: line 20, T1 0.2500 deep x 0.4782 wide at F12 S3000: 399 lbf sideways, 179 lbf lift; the part rocks in the jaws
-  40 ft-lbf (4000 lbf) is NOT enough: margin 1.87x, needs 2x
-  needs at least 42.9 ft-lbf (4289 lbf); the fixture takes up to 80 ft-lbf
+  weakest cut: line 17, T1 0.2500 deep x 0.4788 wide at F12 S3000: 399 lbf sideways, 179 lbf lift; the part rocks in the jaws
+  40 ft-lbf (4148 lbf) is NOT enough: margin 1.77x, needs 2x
+  needs at least 44.4 ft-lbf (4691 lbf); the fixture takes up to 80 ft-lbf
 ```
 
 **The cutting load.** The simulation splits the path into pieces a quarter of
@@ -257,9 +257,12 @@ clamping force:
   their plane: along the jaws, and upwards. A force high above the jaws, or a
   lift near one end, rocks the part about the clamping axis; the floor or
   parallels under the far end take that moment, and the jaws must hold the near
-  end down, which adds to the upward force. The fixed jaw, the screw and the
-  floor take everything else, and a rectangular part cannot turn between rigid
-  jaws.
+  end down, which adds to the upward force. The cutter's own torque (a drill's
+  above all) turns the part about its axis against the jaws' friction alone,
+  acting at the jaw faces' mean distance from the middle of the jaws, so short
+  jaws on a wide part hold it least; sliding and turning combine linearly, as
+  for clamps. The fixed jaw, the screw and the floor take everything else; the
+  side force's own turning moment is left to the jaws squaring the part.
 - *Clamps:* each clamp presses with `lever x torque / (nut_factor x diameter)`.
   Friction under the part and under the clamp tips resists sliding and turning
   (combined linearly, which is conservative), and the clamp forces resist the

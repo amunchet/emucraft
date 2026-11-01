@@ -15,3 +15,6 @@ The viewer shows the workholding result at the top of the Issues tab (margin, le
 
 ## 2026-10-30 02:31 CDT
 Kurt 6" vise presets: `vise = "d688" | "dx6" | "3600v" | "hd690" | "hdl6" | "scd640"` (SCD640 is the self-centering model). Each uses the clamping-force-vs-handle-torque table from Kurt's operating manual (interpolated; the tables are not linear), 6" jaws, and the top of the table as the torque limit (80 ft-lbf, 70 for HDL6, 60 for SCD640). The required torque is now read back off the vise's curve. The viewer's Setup form has a vise model picker.
+
+## 2026-11-01 02:50 CST
+Vise check now counts the cutter's torque about Z: it turns the part against the jaws' friction (at the jaw faces' mean distance from the middle of the jaws), combined linearly with sliding like the clamps. Before, a drill (no side force, no lift) always passed in a vise, even with 0.3 in of jaw contact. New mode "turns in the jaws". The side force's own turning moment is still left to the jaws squaring the part (counting it against friction alone would put a routine 1/2 in slot in steel past 80 ft-lbf). The D688 example slot now needs 44.4 ft-lbf (was 42.9 with the generic 100 lbf/ft-lbf).
