@@ -1,0 +1,15 @@
+# The vise demo: a 5.22 x 3 x 1 in block held in a Kurt vise.
+#
+# kurt.stl is drawn in centimeters with its own origin. The offset puts the
+# fixed jaw's face at X0, centers the jaws on the stock in Y, and puts the
+# top of the jaw plates 0.2 in below the stock top (the block sits on
+# parallels). Open the demo in the viewer to see the vise as it was placed.
+
+units = "inch"
+
+[[fixtures]]
+name = "Kurt vise"
+model = "kurt.stl"
+units = "mm"
+scale = 10                     # the model is in centimeters
+offset = [89.974, -28.049, -2.842]

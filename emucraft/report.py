@@ -37,6 +37,10 @@ def format_text(result: CheckResult, verbose: bool = False) -> str:
         out.append(
             f"  stock  X{_len(s.xmin, u)}..{_len(s.xmax, u)}  Y{_len(s.ymin, u)}..{_len(s.ymax, u)}  "
             f"Z{_len(s.zmin, u)}..{_len(s.zmax, u)}  ({s.source})")
+    for f in result.fixtures:
+        lo, hi = f.bounds
+        out.append(f"  fixture  {f.name}  X{_len(lo[0], u)}..{_len(hi[0], u)}  Y{_len(lo[1], u)}..{_len(hi[1], u)}  "
+                   f"Z{_len(lo[2], u)}..{_len(hi[2], u)}")
     if result.grid:
         g = result.grid
         out.append(f"  grid   {g.nx} x {g.ny} cells of {g.cell:g} {unit}")

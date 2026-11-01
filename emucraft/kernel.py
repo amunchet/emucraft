@@ -21,7 +21,7 @@ import tempfile
 import threading
 from array import array
 from concurrent.futures import ThreadPoolExecutor
-from ctypes import POINTER, c_double, c_float, c_int32, c_uint32, c_void_p
+from ctypes import POINTER, c_double, c_float, c_int8, c_int32, c_uint32, c_void_p
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
@@ -141,6 +141,7 @@ def _declare(lib) -> None:
         "ec_sim_sample": (None, [sim, c_int32, c_int32, c_double, c_double, c_double, c_double, c_double,
                                  POINTER(c_float)]),
         "ec_sim_min_height": (c_double, [sim]),
+        "ec_sim_add_mesh": (None, [sim, POINTER(c_float), c_int32, c_int8, POINTER(c_int8)]),
         "ec_ctx_new": (ctx, [c_int32]),
         "ec_ctx_free": (None, [ctx]),
         "ec_ctx_reset": (None, [ctx]),
@@ -312,6 +313,15 @@ class Sim:
 
     def min_height(self) -> float:
         return self.lib.ec_sim_min_height(self._p)
+
+    def add_mesh(self, triangles: array, index: int = 0, owner: Optional[array] = None) -> None:
+        """Raise the stock to the top of a mesh (array('f'), 9 values per triangle), as seen
+        from +Z. Where the mesh becomes the top, owner (array('b'), one per cell) gets index."""
+        if owner is not None and len(owner) != self.nx * self.ny:
+            raise ValueError("owner needs one entry per cell")
+        self.lib.ec_sim_add_mesh(self._p, _buf(triangles, c_float), len(triangles) // 9, index,
+                                 _buf(owner, c_int8) if owner is not None else None)
+        self.invalidate()
 
     def set_tool(self, slot: int, shape: int, radius: float, corner: float = 0.0,
                  slope: float = 0.0, flute: float = 0.0,

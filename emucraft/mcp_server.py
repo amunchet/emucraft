@@ -37,8 +37,8 @@ remote = False  # served over HTTP: with no programs folder, `path` is refused
 server = MCPServer(
     "emucraft",
     instructions=(
-        "Emucraft simulates 3-axis G-code against the stock, tool, shank and holder. Use check_program "
-        "to find collisions (rapid or spindle-off cuts, holder, shank, table) before a program reaches "
+        "Emucraft simulates 3-axis G-code against the stock, fixtures, tool, shank and holder. Use check_program "
+        "to find collisions (rapid or spindle-off cuts, holder, shank, fixture, table) before a program reaches "
         "the machine. Tool and stock sizes come from CAM comments; program_info shows what was read "
         "and from which line. When a value is missing or misread, tune detection with update_settings "
         "(comment_aliases, comment_rules, variable_rules, check.fuzz_threshold) or pass tools / stock "
@@ -91,6 +91,10 @@ def _load(path: Optional[str], gcode: Optional[str], config_path: Optional[str])
         config = load_config(source) if source else Config()
     except (OSError, ConfigError) as exc:
         raise ToolError(str(exc)) from None
+    if programs is not None or remote:  # fixture models are files too
+        for fx in config.fixtures:
+            if fx.model and (programs is None or not Path(fx.model).is_relative_to(programs)):
+                raise ToolError(f"fixture model {fx.model} is outside the programs folder")
     return text, Path(path).name if path else "program", config, None if source is None else str(source)
 
 
@@ -118,7 +122,7 @@ def check_program(
     """Simulate a G-code program and report collisions.
 
     status is "pass", "warn" or "fail". Each issue has a kind (rapid-cut, spindle-off-cut, holder,
-    shank, table, link-cut, travel, tool), the 1-based source lines and the worst position/depth.
+    shank, fixture, table, link-cut, travel, tool), the 1-based source lines and the worst position/depth.
     messages lists what the interpreter could not simulate. tools shows the geometry used and
     where every value came from.
 
@@ -212,8 +216,9 @@ def get_settings() -> dict:
 def update_settings(changes: Dict[str, Any]) -> dict:
     """Change the saved settings (an emucraft JSON config) used when no other config applies.
 
-    Top-level keys: comment_aliases, comment_rules, variable_rules, check, machine, stock, tools,
-    default_tool, units. Tables (comment_aliases, variable_rules, check, machine, tools,
+    Top-level keys: comment_aliases, comment_rules, variable_rules, check, machine, stock, fixtures,
+    tools, default_tool, units. fixtures is a list of {name, model (STL path relative to the
+    settings file) or min/max box, units, scale, rotate (degrees about Z), offset [x, y, z]}. Tables (comment_aliases, variable_rules, check, machine, tools,
     default_tool) are merged key by key; anything else is replaced. A null value removes a key.
     Lengths are in `units` ("inch" or "mm"; default: the program's units). Example:
     {"comment_aliases": {"tool.holder_length": ["holder length", "gauge from holder"]},
@@ -230,7 +235,7 @@ def update_settings(changes: Dict[str, Any]) -> dict:
         else:
             settings[key] = value
     try:
-        config_from_dict(settings)
+        config_from_dict(settings, settings_path().parent)
     except ConfigError as exc:
         raise ToolError(f"Settings not saved: {exc}") from None
     path = settings_path()

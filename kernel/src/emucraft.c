@@ -580,6 +580,75 @@ void ec_sim_sample(const ec_sim *s, int32_t nx, int32_t ny, double x0, double y0
     }
 }
 
+static inline void swap_points(double *ax, double *ay, double *bx, double *by)
+{
+    double t = *ax;
+    *ax = *bx;
+    *bx = t;
+    t = *ay;
+    *ay = *by;
+    *by = t;
+}
+
+void ec_sim_add_mesh(ec_sim *s, const float *tris, int32_t n, int8_t id, int8_t *owner)
+{
+    if (!s || !tris)
+        return;
+    for (int32_t t = 0; t < n; t++) {
+        const float *v = tris + (size_t)9 * t;
+        double ax = v[0], ay = v[1], az = v[2], bx = v[3], by = v[4], bz = v[5], cx = v[6], cy = v[7],
+               cz = v[8];
+        const double det = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy);
+        if (det > -1e-12 && det < 1e-12)
+            continue; /* vertical: its edges belong to the faces around it */
+        /* the triangle's plane: z = za * x + zb * y + zc */
+        const double za = ((by - cy) * (az - cz) + (cy - ay) * (bz - cz)) / det;
+        const double zb = ((cx - bx) * (az - cz) + (ax - cx) * (bz - cz)) / det;
+        const double zc = cz - za * cx - zb * cy;
+        /* scanline with the corners sorted by y: edge a-c bounds one side of every row */
+        if (ay > by)
+            swap_points(&ax, &ay, &bx, &by);
+        if (by > cy)
+            swap_points(&bx, &by, &cx, &cy);
+        if (ay > by)
+            swap_points(&ax, &ay, &bx, &by);
+        int32_t iy0 = lo_index(ay, s->y0, s->inv_cell), iy1 = hi_index(cy, s->y0, s->inv_cell);
+        if (iy0 < 0)
+            iy0 = 0;
+        if (iy1 > s->ny - 1)
+            iy1 = s->ny - 1;
+        const double kac = (cx - ax) / (cy - ay);
+        const double kab = by > ay ? (bx - ax) / (by - ay) : 0;
+        const double kbc = cy > by ? (cx - bx) / (cy - by) : 0;
+        for (int32_t iy = iy0; iy <= iy1; iy++) {
+            const double py = cell_y(s, iy);
+            double xl = ax + (py - ay) * kac;
+            double xr = py < by ? ax + (py - ay) * kab : bx + (py - by) * kbc;
+            if (xl > xr) {
+                const double t = xl;
+                xl = xr;
+                xr = t;
+            }
+            int32_t ix0 = lo_index(xl, s->x0, s->inv_cell), ix1 = hi_index(xr, s->x0, s->inv_cell);
+            if (ix0 < 0)
+                ix0 = 0;
+            if (ix1 > s->nx - 1)
+                ix1 = s->nx - 1;
+            float *row = s->h + (size_t)iy * s->nx;
+            int8_t *orow = owner ? owner + (size_t)iy * s->nx : 0;
+            const double zrow = zb * py + zc;
+            for (int32_t ix = ix0; ix <= ix1; ix++) {
+                const float z = (float)(za * cell_x(s, ix) + zrow);
+                if (z > row[ix]) {
+                    row[ix] = z;
+                    if (orow)
+                        orow[ix] = id;
+                }
+            }
+        }
+    }
+}
+
 double ec_sim_volume(const ec_sim *s)
 {
     if (!s)

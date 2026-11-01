@@ -106,4 +106,7 @@ def analysis_payload(result: CheckResult) -> dict:
         "kernel_tools": kernel_tools(result),
         "display": display,
         "initial_heights_gz": initial_display_heights(result, display),
+        # fixtures are drawn as their meshes (program units)
+        "fixtures": [{"name": f.name, "triangles_gz": base64.b64encode(gzip.compress(f.triangles.tobytes(), 6)).decode("ascii")}
+                     for f in result.fixtures],
     }
