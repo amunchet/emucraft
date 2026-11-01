@@ -35,6 +35,11 @@ Checks happen during the same sweep:
   intervals are checked exactly. Per-tile maximum heights skip most of the
   stock when bodies are large.
 
+Fixtures use the same model: `ec_sim_add_mesh` raises a height field to
+the top of a triangle mesh (a scanline per triangle, cell centers on the
+triangle's plane), and the checker runs every move over that block flagged
+as a link, so anything cut there is an event.
+
 Speed-ups that do not change the result:
 
 - the part of the start disk the previous move already cut is skipped;

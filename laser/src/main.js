@@ -579,6 +579,22 @@ async function load_model_file(file) {
   set_status(`Loaded model ${file.name}`);
 }
 
+// The stored templates (proprietary parts kept by the laser API) offered as models; picking one loads it like a file.
+async function list_templates() {
+  const sel = $('t_template'), r = await fetch('api/laser/templates');
+  if (!r.ok) throw new Error(`Templates unavailable: ${r.status} ${(await r.json().catch(() => ({}))).error || r.statusText}`);
+  const list = await r.json();
+  sel.options[0].textContent = list.length ? 'Choose a template…' : 'No templates stored';
+  for (const t of list) sel.add(new Option(`${t.id} (${(t.bytes / 1e6).toFixed(1)} MB)`, t.id));
+}
+
+async function load_template(id) {
+  set_status(`Downloading template ${id}…`);
+  const r = await fetch(`api/laser/templates/${encodeURIComponent(id)}`);
+  if (!r.ok) throw new Error(`Could not load template ${id}: ${r.status} ${(await r.json().catch(() => ({}))).error || r.statusText}`);
+  await load_model_file(new File([await r.blob()], `${id}.${r.headers.get('X-Template-Format')}`));
+}
+
 // Take a grey image (0..255, row 0 = top) as the bitmap to burn.
 function set_image(grey, w, h, name) {
   image = { grey, w, h };
@@ -1095,6 +1111,7 @@ $('s_super').onchange = () => { state.supersample = Number($('s_super').value); 
 $('b_sim').onclick = guard(simulate);
 $('b_demo').onclick = guard(load_demo);
 $('f_model').onchange = guard(async (e) => { if (e.target.files[0]) await load_model_file(e.target.files[0]); e.target.value = ''; });
+$('t_template').onchange = guard(async (e) => { const id = e.target.value; e.target.value = ''; if (id) await load_template(id); });
 $('f_image').onchange = guard(async (e) => { if (e.target.files[0]) await load_image_file(e.target.files[0]); e.target.value = ''; });
 $('f_texture').onchange = guard(async (e) => {
   const f = e.target.files[0];
@@ -1151,6 +1168,7 @@ set_preset(state.material.preset);
 sync_outputs();
 show_laser();
 load_demo();
+list_templates().catch((err) => { const sel = $('t_template'); sel.options[0].textContent = 'Unavailable'; sel.title = err.message; sel.disabled = true; });
 controls.addEventListener('change', () => { dirty = true; });
 renderer.setAnimationLoop(() => {
   controls.update();

@@ -40,6 +40,8 @@ services:
     restart: unless-stopped
     expose:
       - "80"
+    environment:
+      - LASER_TOKEN=${LASER_TOKEN:-}   # nginx passes it to laser-api for the template picker
     networks:
       - emucraft
 

@@ -18,3 +18,6 @@ Kurt 6" vise presets: `vise = "d688" | "dx6" | "3600v" | "hd690" | "hdl6" | "scd
 
 ## 2026-11-01 02:50 CST
 Vise check now counts the cutter's torque about Z: it turns the part against the jaws' friction (at the jaw faces' mean distance from the middle of the jaws), combined linearly with sliding like the clamps. Before, a drill (no side force, no lift) always passed in a vise, even with 0.3 in of jaw contact. New mode "turns in the jaws". The side force's own turning moment is still left to the jaws squaring the part (counting it against friction alone would put a routine 1/2 in slot in steel past 80 ft-lbf). The D688 example slot now needs 44.4 ft-lbf (was 42.9 with the generic 100 lbf/ft-lbf).
+
+## 2026-11-01 02:51 CST
+Merged master (fixture collision checks #19, laser templates #18). Conflicts in check.py, config.py, mcp_server.py and panels.js were both-sides additions: CheckResult carries fixtures and workholding, timing has both entries, and config/settings accept both `fixtures` and `workholding`. Note the two are separate: `[[fixtures]]` are solids the tool must not hit, `[workholding]` is whether the grip holds against the cut. 333 passed, 1 skipped.
