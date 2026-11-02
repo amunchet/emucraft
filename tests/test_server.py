@@ -109,6 +109,22 @@ def test_analyze_settings_override_the_program(server):
     assert data["report"]["tools"]["2"]["source"]["stickout"] == "override"
 
 
+def test_analyze_workholding_settings(server):
+    """The viewer's workholding form: a vise set up from settings, in program units."""
+    _, _, body = get(server + "/api/info")
+    assert "steel" in json.loads(body)["workholding_materials"]
+    text = (EXAMPLES / "pocket_corners.nc").read_text()
+    hold = {"fixture": "vise", "material": "titanium", "grip": 0.5, "force_per_torque": 100, "torque": 1}
+    status, data = post(server + "/api/analyze", {"name": "pocket_corners.nc", "text": text,
+                                                  "settings": {"workholding": hold, "tools": {"5": {"flutes": 4}}}})
+    assert status == 200
+    report = data["report"]
+    w = report["workholding"]
+    assert w["torque"] == 1 and w["force"] == 100 and w["material"] == "titanium"
+    assert report["status"] == "fail" and "workholding" in [i["kind"] for i in report["issues"]]
+    assert w["margin"] == pytest.approx(w["safety_factor"] / w["required_torque"])
+
+
 def test_analyze_errors(server):
     status, data = post(server + "/api/analyze", {"name": "x.nc"})
     assert status == 400 and "no program text" in data["error"]

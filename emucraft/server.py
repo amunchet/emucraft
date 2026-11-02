@@ -1,7 +1,7 @@
 """Local web server: the 3D viewer plus a small JSON API.
 
     GET  /                        viewer
-    GET  /api/info                version, optimizer presets
+    GET  /api/info                version, optimizer presets, workholding materials
     GET  /api/programs            programs in the served folder (and examples)
     GET  /api/programs/<name>     program text
     POST /api/analyze             {name, text, settings}          -> report + path
@@ -37,6 +37,7 @@ from .kernel import KernelError
 from .model import Config, StockSpec
 from .optimize import MATERIALS, OptimizeSpec, optimize
 from .payload import WEB, analysis_payload, b64
+from .workholding import MATERIALS as HOLD_MATERIALS, VISES, HoldSpec
 
 EXAMPLES = Path(__file__).resolve().parent.parent / "examples"
 PROGRAM_SUFFIXES = {".nc", ".ngc", ".gcode", ".tap", ".cnc", ".txt", ".mpf", ".eia", ".min", ".h"}
@@ -89,6 +90,9 @@ def apply_settings(config: Config, settings: Optional[dict]):
         overrides[number] = clean
     if overrides:
         kwargs["overrides"] = overrides
+    hold = {k: v for k, v in (settings.get("workholding") or {}).items() if v is not None and v != ""}
+    if hold:
+        kwargs["workholding"] = hold
     return config, kwargs
 
 
@@ -185,7 +189,11 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path == "/api/info":
                 self._json(200, {"version": __version__, "materials": MATERIALS,
-                                 "optimize_defaults": asdict(OptimizeSpec())})
+                                 "optimize_defaults": asdict(OptimizeSpec()),
+                                 "workholding_materials": {k: {"kc1": v[0], "mc": v[1]}
+                                                           for k, v in HOLD_MATERIALS.items()},
+                                 "workholding_defaults": asdict(HoldSpec()),
+                                 "vises": list(VISES)})
             elif path == "/api/programs":
                 self._json(200, self._list_programs())
             elif path.startswith("/api/programs/"):
