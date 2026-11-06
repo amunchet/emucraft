@@ -300,7 +300,7 @@ class Sim:
         view = self.heights()
         if len(heights) != len(view):
             raise ValueError("height field size does not match the grid")
-        view[:] = memoryview(array("f", heights)).cast("B").cast("f")
+        view[:] = memoryview(heights).cast("B").cast("f")  # a buffer: copying cell by cell takes seconds
         self.invalidate()
 
     def sample(self, nx: int, ny: int, x0: float, y0: float, cell: float,

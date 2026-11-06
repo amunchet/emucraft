@@ -23,3 +23,6 @@ Added `examples/broken_tool_demo.nc` and `examples/workholding/`: no example sho
 
 ## 2026-11-05 21:12 CST
 Corrected the `check_program` fixtures documentation: lengths follow the config's units, like the config's own fixtures, not always the program's. Found while preparing the pull request: an inch config with a mm program scaled a box 25.4 times against what the text promised.
+
+## 2026-11-05 21:22 CST
+`Sim.load_heights` copied the height field cell by cell, about 0.65 s per tool run on a 5 million cell grid, and the broken-tool check calls it for every run: crash_demo took 1.98 s instead of 0.09 s. It now copies the buffer directly, 0.14 s, which also halves the test suite.
