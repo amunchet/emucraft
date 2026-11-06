@@ -104,6 +104,7 @@ flowchart LR
 | `shank` | Material taller than the flute length is cut: the shank rubs. Also a shank wider than the cutter touching the stock |
 | `holder` | The holder cylinder (`holder_diameter`, bottom at `stickout` above the tip) touches the stock, including stock left beside the cut |
 | `fixture` | The cutter, shank or holder touches a fixture from the config (a vise, clamp or plate), on any move |
+| `broken-tool` | Had the tool broken as its run started, the holder would hit the stock that run found, which a broken tool never cuts (warning; `broken_tool = false` under `[check]` turns it off) |
 | `table` | The tip goes below the table / fixture plane (default: the stock bottom) |
 | `link-cut` | A feed move at or above `link_feed` (high-feed "fly" links) removes material (warning) |
 | `travel` | The path leaves the machine travel limits, if configured |

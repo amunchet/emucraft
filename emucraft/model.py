@@ -190,6 +190,7 @@ class CheckSpec:
     threads: Optional[int] = None
     fuzz_threshold: float = 0.85  # how close a comment label must be to an alias (1 = exact)
     fixture_resolution: Optional[float] = None  # fixture cell size; default ~1 million cells over its reach
+    broken_tool: bool = True  # also sweep each holder over the stock its tool found at its start
 
 
 @dataclass

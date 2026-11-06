@@ -75,6 +75,7 @@ def test_find_config(tmp_path):
     ({"check": {"max_cells": 1.5}}, "max_cells"),
     ({"check": {"link_severity": "panic"}}, "link_severity"),
     ({"check": {"block_delete": "yes"}}, "block_delete"),
+    ({"check": {"broken_tool": 1}}, "broken_tool"),
     ({"check": {"tool_point": "side"}}, "tool_point"),
     ({"stock": {"min": [0, 0], "max": [1, 1, 1]}}, "needs min"),
     ({"stock": {"min": [0, 0, 0], "max": [1, -1, 1]}}, "larger than min"),

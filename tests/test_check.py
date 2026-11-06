@@ -114,7 +114,9 @@ def test_overrides(makino_text):
     assert t20.source["stickout"] == "override"
     # a 0.05 in stick-out puts the holder into the second (0.1 deep) level
     assert result.status == "fail"
-    assert {i.kind for i in result.issues} == {"holder"}
+    assert {i.kind for i in result.errors} == {"holder"}
+    # had it broken at once, the holder would already hit the uncut first level
+    assert {i.kind for i in result.issues if i.severity == "warning"} == {"broken-tool"}
 
 
 LINK = STOCK + FLAT + """T1 M6
@@ -231,6 +233,37 @@ def test_peck_cycle_is_checked_along_the_whole_hole():
     low_r = check_text(PECK + "G83 G99 Z-0.4 R-0.2 Q0.15 F10.\nG80\nG0 Z1.\n", "peck", coarse())
     assert issues(low_r) == [("rapid-cut", "error", 14, 14)]
     assert low_r.issues[0].depth == pytest.approx(0.2, abs=1e-3)
+
+
+def _face(z: float) -> str:
+    """Face a 4 x 3 block at ``z`` in passes 0.4 apart."""
+    out = [f"G0 X-0.5 Y-0.2 Z1.\nG1 Z{z:g} F20."]
+    y, right = -0.2, True
+    while y <= 3.2:
+        out.append(f"G1 X{4.5 if right else -0.5:g} Y{y:g}\nG1 Y{y + 0.4:g}")
+        y, right = y + 0.4, not right
+    out.append("G0 Z1.")
+    return "\n".join(out) + "\n"
+
+
+BROKEN_TOOL = "(STICKOUT: 0.5)\n(HOLDER DIAMETER: 1.0)\n(FLUTE LENGTH: 1.0)\nS1000 M3\n"
+
+
+def test_holder_is_checked_against_the_block_a_broken_tool_leaves():
+    """Facing at Z-0.3 then Z-0.6 is clean, but had T1 broken at its start the
+    second level would drive the holder (0.5 above the tip) 0.1 into the block."""
+    one_tool = check_text(STOCK + FLAT + "T1 M6\n" + BROKEN_TOOL + _face(-0.3) + _face(-0.6), "face", coarse())
+    assert [(i.kind, i.severity, i.tool) for i in one_tool.issues] == [("broken-tool", "warning", 1)]
+    assert one_tool.issues[0].depth == pytest.approx(0.1, abs=1e-3)
+    # one warning for the run, over the second level only
+    assert (one_tool.issues[0].first_line + 1, one_tool.issues[0].last_line + 1) == (36, 52)
+    assert one_tool.status == "warn"
+    assert check_text(STOCK + FLAT + "T1 M6\n" + BROKEN_TOOL + _face(-0.3) + _face(-0.6), "face",
+                      coarse(broken_tool=False)).issues == []
+    # a second tool starts on the block the first one left: Z-0.3
+    two_tools = (STOCK + FLAT + "T1 M6\n" + BROKEN_TOOL + _face(-0.3)
+                 + "(T2 D=0.5 CR=0. - flat end mill)\nT2 M6\n" + BROKEN_TOOL + _face(-0.6))
+    assert check_text(two_tools, "face", coarse()).issues == []
 
 
 def test_threads_do_not_change_the_result():
