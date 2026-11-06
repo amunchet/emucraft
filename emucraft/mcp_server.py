@@ -38,12 +38,14 @@ server = MCPServer(
     "emucraft",
     instructions=(
         "Emucraft simulates 3-axis G-code against the stock, fixtures, tool, shank and holder. Use check_program "
-        "to find collisions (rapid or spindle-off cuts, holder, shank, fixture, table) before a program reaches "
+        "to find collisions (rapid or spindle-off cuts, holder, shank, fixture, table) and whether the holder "
+        "would hit the stock a broken tool leaves uncut (broken-tool warnings) before a program reaches "
         "the machine. Tool and stock sizes come from CAM comments; program_info shows what was read "
         "and from which line. When a value is missing or misread, tune detection with update_settings "
         "(comment_aliases, comment_rules, variable_rules, check.fuzz_threshold) or pass tools / stock "
         "to check_program. Pass workholding (vise or toe clamps, part material, torque) to check_program "
-        "to learn whether the cutting forces can move the part and what torque holds it."
+        "to learn whether the cutting forces can move the part and what torque holds it. Pass fixtures "
+        "(vises, clamps, plates as boxes or STL models) to check the tool against them for that one call."
     ),
 )
 
@@ -79,6 +81,15 @@ def _file(path: Optional[str]) -> Optional[str]:
     return str(file)
 
 
+def _guard_models(config: Config) -> None:
+    """Fixture models are files too: keep them inside the programs folder when there is one."""
+    if programs is None and not remote:
+        return
+    for fx in config.fixtures:
+        if fx.model and (programs is None or not Path(fx.model).is_relative_to(programs)):
+            raise ToolError(f"fixture model {fx.model} is outside the programs folder")
+
+
 def _load(path: Optional[str], gcode: Optional[str], config_path: Optional[str]) -> Tuple[str, str, Config, Optional[str]]:
     """(text, name, config, where the config came from) for a tool call."""
     if (path is None) == (gcode is None):
@@ -92,10 +103,7 @@ def _load(path: Optional[str], gcode: Optional[str], config_path: Optional[str])
         config = load_config(source) if source else Config()
     except (OSError, ConfigError) as exc:
         raise ToolError(str(exc)) from None
-    if programs is not None or remote:  # fixture models are files too
-        for fx in config.fixtures:
-            if fx.model and (programs is None or not Path(fx.model).is_relative_to(programs)):
-                raise ToolError(f"fixture model {fx.model} is outside the programs folder")
+    _guard_models(config)
     return text, Path(path).name if path else "program", config, None if source is None else str(source)
 
 
@@ -120,13 +128,16 @@ def check_program(
     tools: Optional[Dict[str, Dict[str, Any]]] = None,
     resolution: Optional[float] = None,
     workholding: Optional[Dict[str, Any]] = None,
+    fixtures: Optional[List[Dict[str, Any]]] = None,
 ) -> dict:
     """Simulate a G-code program and report collisions, and whether the vise or clamps hold the part.
 
     status is "pass", "warn" or "fail". Each issue has a kind (rapid-cut, spindle-off-cut, holder,
-    shank, fixture, table, link-cut, travel, tool, workholding), the 1-based source lines and the worst
-    position/depth. messages lists what the interpreter could not simulate. tools shows the geometry
-    used and where every value came from.
+    broken-tool, shank, fixture, table, link-cut, travel, tool, workholding), the 1-based source lines
+    and the worst position/depth. A broken-tool issue is a warning: had the tool snapped as its run
+    started, the holder would hit the stock it left uncut (needs holder_diameter and stickout; turn it
+    off with check.broken_tool in update_settings). messages lists what the interpreter could not
+    simulate. tools shows the geometry used and where every value came from.
 
     stock       - [xmin, ymin, zmin, xmax, ymax, zmax] in program units, instead of the CAM header.
     tools       - per-tool overrides in program units, e.g. {"20": {"holder_diameter": 1.3,
@@ -147,6 +158,10 @@ def check_program(
                   friction (0.15), jaw_width, axis ("y": the jaws close along Y), center, lift_stop
                   (a dovetail or step holds the part down), force (instead of torque), nut_factor,
                   bolt_grade, lever, kc1 and mc (a material of your own), radial_ratio, axial_ratio.
+    fixtures    - solids the tool must not touch, for this call, instead of the config's. Each is a box
+                  {"name": "toe clamp", "min": [x, y, z], "max": [x, y, z]} or {"name": "vise",
+                  "model": "kurt.stl"} (a file in the programs folder), with optional units, scale,
+                  rotate (degrees about Z) and offset [x, y, z]. Boxes are in program units.
     """
     text, name, config, source = _load(path, gcode, config_path)
     if stock is not None and len(stock) != 6:
@@ -157,6 +172,12 @@ def check_program(
             overrides["*" if key == "*" else int(str(key).lstrip("Tt"))] = values
         except ValueError:
             raise ToolError(f"'{key}' is not a tool number (use \"20\", \"T20\" or \"*\")") from None
+    if fixtures is not None:
+        try:
+            config.fixtures = config_from_dict({"fixtures": fixtures}, programs).fixtures
+        except ConfigError as exc:
+            raise ToolError(str(exc)) from None
+        _guard_models(config)
     try:
         result = check_text(
             text, name, config,
@@ -233,8 +254,10 @@ def update_settings(changes: Dict[str, Any]) -> dict:
     """Change the saved settings (an emucraft JSON config) used when no other config applies.
 
     Top-level keys: comment_aliases, comment_rules, variable_rules, check, machine, stock, fixtures,
-    tools, default_tool, workholding, units. fixtures is a list of {name, model (STL path relative to
-    the settings file) or min/max box, units, scale, rotate (degrees about Z), offset [x, y, z]}.
+    tools, default_tool, workholding, units. check.broken_tool false skips the broken-tool warnings.
+    fixtures is a list of {name, model (STL path, relative to the programs folder if the server has
+    one, else to the settings file) or min/max box, units, scale, rotate (degrees about Z), offset
+    [x, y, z]}; they apply to every later call: for one program, pass fixtures to check_program.
     Tables (comment_aliases, variable_rules, check, machine, tools, default_tool, workholding) are
     merged key by key; anything else is replaced. A null value removes a key. workholding takes the
     options of check_program's workholding, in `units`.
@@ -252,9 +275,13 @@ def update_settings(changes: Dict[str, Any]) -> dict:
             settings[key] = {k: v for k, v in merged.items() if v is not None}
         else:
             settings[key] = value
+    if programs is not None:  # the settings file lives elsewhere, as /data does in Docker
+        for fx in settings.get("fixtures") or []:
+            if isinstance(fx, dict) and isinstance(fx.get("model"), str):
+                fx["model"] = str((programs / fx["model"]).resolve())
     try:
-        config_from_dict(settings, settings_path().parent)
-    except ConfigError as exc:
+        _guard_models(config_from_dict(settings, settings_path().parent))
+    except (ConfigError, ToolError) as exc:
         raise ToolError(f"Settings not saved: {exc}") from None
     path = settings_path()
     path.parent.mkdir(parents=True, exist_ok=True)

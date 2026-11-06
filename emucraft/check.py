@@ -594,6 +594,7 @@ def run_check(
         "table_z": table_z,
         "tolerance": tolerance,
         "link_feed": link_feed or None,
+        "broken_tool": config.check.broken_tool,
         "volume_removed": removed,
         "volume_by_tool": {str(k): v for k, v in volume_by_tool.items()},
         "simulated_segments": simplified,

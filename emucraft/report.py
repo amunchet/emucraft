@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from typing import Iterable, List
 from xml.sax.saxutils import escape, quoteattr
 
@@ -48,8 +49,10 @@ def format_text(result: CheckResult, verbose: bool = False) -> str:
         parts = [f"T{number}", t.shape, f"D{_len(t.diameter, u)}" if t.diameter else "D?"]
         if t.shape == "bull":
             parts.append(f"R{_len(t.corner_radius, u)}")
+        if t.flutes:
+            parts.append(f"{t.flutes:g} flute{'s' if t.flutes != 1 else ''}")
         if t.flute_length:
-            parts.append(f"flutes {_len(t.flute_length, u)}")
+            parts.append(f"flute length {_len(t.flute_length, u)}")
         if t.stickout:
             parts.append(f"stick-out {_len(t.stickout, u)}")
         if t.holder_diameter and t.stickout:
@@ -83,12 +86,14 @@ def format_text(result: CheckResult, verbose: bool = False) -> str:
         if worst is None:
             out.append("  no cut loads the part")
         else:
+            load = (f"{worst['cutting_torque']:.1f} {tu} of cutting torque" if worst["side_force"] < 0.5
+                    else f"{worst['side_force']:.0f} {fu} sideways, {worst['lift']:.0f} {fu} lift")
             out.append(
                 f"  weakest cut: line {worst['line']}, T{worst['tool']} {_len(worst['axial_depth'], u)} deep x "
                 f"{_len(worst['radial_width'], u)} wide at F{worst['feed']:g} S{worst['rpm']:g}: "
-                f"{worst['side_force']:.0f} {fu} sideways, {worst['lift']:.0f} {fu} lift; the part {worst['mode']}")
+                f"{load}; the part {worst['mode']}")
             if w["force"] is not None:
-                given = f"{w['torque']:g} {tu} ({w['force']:.0f} {fu})" if w["torque"] else f"{w['force']:.0f} {fu}"
+                given = f"{w['torque']:.4g} {tu} ({w['force']:.0f} {fu})" if w["torque"] else f"{w['force']:.0f} {fu}"
                 if w["margin"] is None:
                     out.append(f"  {given} holds every cut")
                 elif w["margin"] >= w["safety_factor"]:
@@ -101,7 +106,8 @@ def format_text(result: CheckResult, verbose: bool = False) -> str:
             else:
                 need = f"{w['required_force']:.0f} {fu}"
                 if w["required_torque"] is not None:
-                    need = f"{w['required_torque']:.1f} {tu} ({need})"
+                    # rounded up: the figure shown must itself hold
+                    need = f"{math.ceil(w['required_torque'] * 10) / 10:.1f} {tu} ({need})"
                 limit = f"; the fixture takes up to {w['max_torque']:.0f} {tu}" if w["max_torque"] else ""
                 out.append(f"  needs at least {need}{limit}")
     st = result.stats

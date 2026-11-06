@@ -23,36 +23,52 @@ export function renderIssues(root, report, { onIssue, onLine, selected }) {
   root.textContent = '';
   const issues = report.issues;
   const w = report.workholding;
+  const bad = report.messages.filter(m => m.code === 'workholding' && m.level === 'error');
+  if (bad.length) {
+    root.append(el('div', { class: 'hold error' },
+      el('div', { class: 'kind' }, 'Workholding not checked'),
+      bad.map(m => el('div', {}, m.text)),
+      el('div', { class: 'note' }, 'Fix it under Setup > Workholding, or set Fixture to Off.')));
+  }
   if (w) {
     const fu = w.units.force, tu = w.units.torque, sf = w.safety_factor;
     const num = v => v.toLocaleString(undefined, { maximumFractionDigits: v < 10 ? 1 : 0 });
     const over = w.required_torque !== null && w.max_torque !== null && w.required_torque > w.max_torque;
-    const held = w.worst === null || (w.margin === null ? w.required_force !== null && !over : w.margin >= sf);
+    const past = w.torque !== null && w.max_torque !== null && w.torque > w.max_torque;  // more than the fixture takes
+    const held = !past && (w.worst === null || (w.margin === null ? w.required_force !== null && !over : w.margin >= sf));
+    // rounded up: the figure shown must itself hold
+    const least = w.required_torque === null ? null : Math.ceil(w.required_torque * 10) / 10;
     const verdict = w.force === null && held ? 'info' : held ? 'ok' : 'error';
     const worst = w.worst;
     root.append(el('div', { class: `hold ${verdict}` },
       el('div', { class: 'kind' }, `Workholding · ${w.fixture === 'vise' ? 'vise' : 'toe clamps'} · ${w.material || `kc1 ${w.kc1}`}`),
       el('div', { class: 'note' }, `Worn tool ×${w.wear_factor}, safety factor ×${sf}, friction ${w.friction}`),
       w.force !== null ? el('div', {},
-        `${w.torque !== null ? `${num(w.torque)} ${tu} → ` : ''}${num(w.force)} ${fu}: `,
+        `${w.torque !== null ? `${w.torque.toLocaleString(undefined, { maximumFractionDigits: 1 })} ${tu} → ` : ''}${num(w.force)} ${fu}: `,
         w.margin === null ? el('b', {}, 'holds every cut')
           : el('b', {}, `margin ${w.margin.toFixed(2)}× ${w.margin >= sf ? '≥' : '<'} ${sf}×`)) : null,
       el('div', {}, w.worst === null ? 'No cut loads the part'
         : w.required_force === null ? el('b', {}, 'No clamping force holds the part')
-          : ['Least that holds every cut: ', el('b', {}, w.required_torque !== null
-            ? `${num(w.required_torque)} ${tu}` : `${num(w.required_force)} ${fu}`),
-            w.required_torque !== null ? ` (${num(w.required_force)} ${fu})` : '']),
-      w.max_torque !== null ? el('div', { class: over ? 'problem' : 'note' }, `The fixture takes up to ${num(w.max_torque)} ${tu}`) : null,
+          : ['Least that holds every cut: ', el('b', {}, least !== null
+            ? `${least.toFixed(1)} ${tu}` : `${num(w.required_force)} ${fu}`),
+            least !== null ? ` (${num(w.required_force)} ${fu})` : '']),
+      w.max_torque !== null ? el('div', { class: over || past ? 'problem' : 'note' }, `The fixture takes up to ${num(w.max_torque)} ${tu}`) : null,
       worst ? el('div', { class: 'msg', onclick: () => onLine(worst.line - 1) },
         el('span', { class: 'where' }, `line ${worst.line}`),
-        `Weakest cut: T${worst.tool} pushes ${num(worst.side_force)} ${fu} sideways`,
+        worst.side_force < 0.5 ? `Weakest cut: T${worst.tool} twists with ${num(worst.cutting_torque)} ${tu} of cutting torque`
+          : `Weakest cut: T${worst.tool} pushes ${num(worst.side_force)} ${fu} sideways`,
         worst.lift > 0 ? ` and lifts ${num(worst.lift)} ${fu}` : '', `; the part ${worst.mode}`) : null));
   }
   if (!issues.length) {
+    // only name what ran: a tool without holder data gets neither holder check
+    const blind = Object.entries(report.tools).filter(([, t]) => !(t.holder_diameter && t.stickout)).map(([n]) => `T${n}`);
+    const holder = blind.length === Object.keys(report.tools).length ? ''
+      : report.stats.broken_tool ? ', holder (also with a broken tool)' : ', holder';
     root.append(el('div', { class: 'all-clear' },
       icon('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m7 12.5 3.2 3.2L17 9"/></svg>'),
       'No collisions found',
-      el('div', { class: 'note' }, `Rapids, spindle state, flutes, shank, holder (also with a broken tool)${report.fixtures?.length ? ', fixtures' : ''} and table were checked on every move.`)));
+      el('div', { class: 'note' }, `Rapids, spindle state, flutes, shank${holder}${report.fixtures?.length ? ', fixtures' : ''} and table were checked on every move.`),
+      blind.length ? el('div', { class: 'note' }, `Holder not checked for ${blind.join(', ')}: needs holder diameter and stick-out.`) : null));
   }
   issues.forEach((issue, i) => {
     const card = el('div', {
@@ -64,7 +80,7 @@ export function renderIssues(root, report, { onIssue, onLine, selected }) {
     el('div', { class: 'msg' }, issue.message));
     root.append(card);
   });
-  const msgs = report.messages.filter(m => m.level !== 'info' || m.code === 'assumed-tool');
+  const msgs = report.messages.filter(m => !bad.includes(m) && (m.level !== 'info' || m.code === 'assumed-tool'));
   if (msgs.length) {
     root.append(el('h3', {}, 'Program messages'));
     const list = el('ul', { class: 'msg-list' });
@@ -96,7 +112,7 @@ function sourceOf(spec, key) {
   return s.replace('program line', 'line').replace('config ', '');
 }
 
-export function renderSetup(root, report, { units, readOnly, onApply, settings, materials, holdDefaults, vises }) {
+export function renderSetup(root, report, { units, readOnly, onApply, settings, holdBase, materials, holdDefaults, vises }) {
   root.textContent = '';
   const u = units === 'mm' ? 'mm' : 'in';
   if (readOnly) root.append(el('p', { class: 'note' }, 'This is a saved report. Run `emucraft serve` to change the setup and re-check.'));
@@ -144,10 +160,12 @@ export function renderSetup(root, report, { units, readOnly, onApply, settings, 
     field('Rapids', 'rapid_mode', report.machine.rapid_mode, { options: [['linear', 'Linear'], ['dogleg', 'Dog-leg (axes independent)']] }),
     field(`Table / fixture Z`, 'table_z', report.machine.table_z),
     field(`Link feed ≥ (${u}/min)`, 'link_feed', report.stats.link_feed ?? null, { source: 'feed moves this fast must not cut; empty: off' }),
-    field(`Resolution (${u})`, 'resolution', report.grid?.cell, { source: report.grid ? `${report.grid.nx} × ${report.grid.ny} cells` : null })));
+    field(`Resolution (${u})`, 'resolution', report.grid?.cell, { source: report.grid ? `${report.grid.nx} × ${report.grid.ny} cells` : null }),
+    field('Broken-tool check', 'broken_tool', String(report.stats.broken_tool ?? true), { options: [['true', 'On'], ['false', 'Off']], source: 'holder against the stock a broken tool leaves' })));
 
-  // workholding: what the config set, else the defaults; only changes are sent
-  const w = report.workholding || {}, d = holdDefaults || {};
+  // workholding: what was asked for, else what the config set, else the defaults; only changes are sent
+  const asked = settings?.workholding || {};
+  const w = asked.fixture === 'off' ? {} : { ...(report.workholding ?? holdBase), ...asked }, d = holdDefaults || {};
   const fu = units === 'mm' ? 'N' : 'lbf', tu = units === 'mm' ? 'N-m' : 'ft-lbf';
   const names = Object.keys(materials || {});
   if (w.material && !names.includes(w.material)) names.push(w.material);
@@ -174,6 +192,12 @@ export function renderSetup(root, report, { units, readOnly, onApply, settings, 
     field('Bolt force on the part (×)', 'hold.lever', w.lever ?? d.lever, { group: 'clamps', source: 'heel distance / heel-to-part' }),
     field('Lift held positively', 'hold.lift_stop', String(w.lift_stop ?? false), { wide: true, options: [['false', 'No'], ['true', 'Yes: dovetail, step jaws or bolts']] }));
   const fixture = hold.querySelector('[name="hold.fixture"]');
+  // a torque or a force, not both
+  for (const [a, b] of [['torque', 'force'], ['force', 'torque']]) {
+    hold.querySelector(`[name="hold.${a}"]`).addEventListener('input', e => {
+      if (e.target.value) hold.querySelector(`[name="hold.${b}"]`).value = '';
+    });
+  }
   const showGroups = () => {
     for (const label of hold.querySelectorAll('label')) {
       label.hidden = !fixture.value ? label !== fixture.parentElement : !!label.dataset.group && label.dataset.group !== fixture.value;
@@ -218,21 +242,26 @@ function collect(form) {
     }
     if (Object.keys(t).length) (out.tools ||= {})[card.dataset.tool] = t;
   }
+  const broken = form.querySelector('[name="broken_tool"]');
+  if (changed(broken)) out.broken_tool = broken.value === 'true';
   for (const name of ['rapid_mode', 'table_z', 'link_feed', 'resolution']) {
     const input = form.querySelector(`[name="${name}"]`);
     if (!changed(input)) continue;
     // an emptied link feed turns the check off (0); other fields fall back to the program
     out[name] = value(input) ?? (name === 'link_feed' ? 0 : null);
   }
-  if (form.querySelector('[name="hold.fixture"]').value) {
+  const fixture = form.querySelector('[name="hold.fixture"]');
+  if (fixture.value) {
     for (const input of form.querySelectorAll('[name^="hold."]')) {
       if (!changed(input)) continue;
       const key = input.name.slice(5);
       let v = value(input);
-      if (key === 'clamps') v = input.value.split(';').map(p => p.split(',').map(Number)).filter(p => p.length === 2 && p.every(Number.isFinite));
+      if (key === 'clamps') v = input.value.split(';').filter(p => p.trim()).map(p => p.split(',').map(Number));
       else if (key === 'lift_stop') v = input.value === 'true';
-      if (v !== null && v !== '') (out.workholding ||= {})[key] = v;
+      (out.workholding ||= {})[key] = v === '' ? null : v;  // an emptied field goes back to its default
     }
+  } else if (changed(fixture)) {
+    out.workholding = { fixture: 'off' };
   }
   return out;
 }

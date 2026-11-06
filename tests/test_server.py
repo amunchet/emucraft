@@ -11,8 +11,9 @@ from pathlib import Path
 
 import pytest
 
+from emucraft.config import config_from_dict
 from emucraft.model import Config
-from emucraft.server import make_server
+from emucraft.server import apply_settings, make_server
 
 EXAMPLES = Path(__file__).resolve().parents[1] / "examples"
 
@@ -193,3 +194,15 @@ def test_open_optimized_copy_uses_the_originals_config(server):
     assert alone["report"]["tools"]["20"]["holder_diameter"] == 10.0  # the post's placeholder
     assert kept["report"]["tools"]["20"]["holder_diameter"] == 1.3  # examples/emucraft.toml
     assert kept["report"]["stats"]["link_feed"] == 700
+
+
+def test_viewer_workholding_off_overrides_the_config_file():
+    config = config_from_dict({"workholding": {"material": "steel", "fixture": "vise", "grip": 0.5, "force": 3000}})
+    off, kwargs = apply_settings(config, {"workholding": {"fixture": "off"}})
+    assert not off.workholding and "workholding" not in kwargs
+    assert config.workholding  # the loaded config itself stays
+
+
+def test_viewer_turns_the_broken_tool_check_off():
+    assert apply_settings(Config(), {"broken_tool": False})[0].check.broken_tool is False
+    assert apply_settings(Config(), {})[0].check.broken_tool is True

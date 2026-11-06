@@ -166,6 +166,7 @@ button, select, input { font: inherit; color: inherit; }
 }
 .hud:empty { display: none; }
 .hud .hit { color: var(--err); font-weight: 700; }
+.hud .hit.warning { color: var(--warn); }
 .legend {
   position: absolute; right: 10px; bottom: 10px; font-size: 11px; pointer-events: none;
   background: color-mix(in srgb, var(--panel) 80%, transparent); border: 1px solid var(--border);

@@ -331,3 +331,10 @@ def test_travel_limits_ignore_the_assumed_home():
     result = check_text(text, "home", config)
     assert result.program.home_z == 1.0  # stock top + 1 in
     assert [(i.kind, i.first_line + 1) for i in result.issues] == [("travel", 12)]  # only the programmed Z0.9
+
+
+def test_broken_tool_example_warns_only_on_the_deep_pass():
+    result = check_text((EXAMPLES / "broken_tool_demo.nc").read_text(), "demo.nc", Config())
+    assert result.status == "warn"
+    assert [i.kind for i in result.issues] == ["broken-tool"]
+    assert result.stats["broken_tool"] is True
