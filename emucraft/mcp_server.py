@@ -161,7 +161,9 @@ def check_program(
     fixtures    - solids the tool must not touch, for this call, instead of the config's. Each is a box
                   {"name": "toe clamp", "min": [x, y, z], "max": [x, y, z]} or {"name": "vise",
                   "model": "kurt.stl"} (a file in the programs folder), with optional units, scale,
-                  rotate (degrees about Z) and offset [x, y, z]. Boxes are in program units.
+                  rotate (degrees about Z) and offset [x, y, z]. Lengths are in the config's units,
+                  or program units when it sets none, as for the config's own fixtures; give
+                  "units" ("inch" or "mm") to be explicit.
     """
     text, name, config, source = _load(path, gcode, config_path)
     if stock is not None and len(stock) != 6:

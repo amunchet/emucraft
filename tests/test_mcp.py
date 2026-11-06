@@ -194,3 +194,13 @@ def test_a_model_outside_the_programs_folder_is_not_saved(served, tmp_path, sett
     with pytest.raises(RuntimeError, match="Settings not saved: fixture model .* is outside the programs folder"):
         call("update_settings", changes={"fixtures": [{"model": str(tmp_path / "plate.stl")}]})
     assert not settings_file.exists()
+
+
+def test_call_fixtures_take_their_units_like_the_configs_own(settings_file):
+    mm = "G21\n" + HEADER
+    box = {"name": "b", "min": [0, 0, -2], "max": [1, 1, -1]}
+    assert call("check_program", gcode=mm, fixtures=[box])["fixtures"][0]["bounds"][1][0] == pytest.approx(1)
+    call("update_settings", changes={"units": "inch"})
+    assert call("check_program", gcode=mm, fixtures=[box])["fixtures"][0]["bounds"][1][0] == pytest.approx(25.4)
+    explicit = {**box, "units": "mm"}
+    assert call("check_program", gcode=mm, fixtures=[explicit])["fixtures"][0]["bounds"][1][0] == pytest.approx(1)

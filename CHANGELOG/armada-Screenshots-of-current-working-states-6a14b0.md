@@ -20,3 +20,6 @@ Viewer: the all-clear note no longer claims holder checks for tools without hold
 MCP: the tool text now covers `broken-tool`, `check.broken_tool` and fixtures. `check_program` takes `fixtures` for one call, needed by inline callers since the deployed programs folder is empty. `update_settings` refuses a model outside the programs folder (it used to save it and fail every later check), and relative models resolve against the programs folder, since they could never work from `/data` in Docker.
 
 Added `examples/broken_tool_demo.nc` and `examples/workholding/`: no example showed either feature.
+
+## 2026-11-05 21:12 CST
+Corrected the `check_program` fixtures documentation: lengths follow the config's units, like the config's own fixtures, not always the program's. Found while preparing the pull request: an inch config with a mm program scaled a box 25.4 times against what the text promised.
