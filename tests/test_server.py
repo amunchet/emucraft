@@ -354,6 +354,15 @@ def test_unknown_simulations_are_not_found(server, ident):
     assert status == 404
 
 
+def test_a_simulation_id_cannot_reach_outside_its_folder(server, data_dir):
+    (data_dir / "simulations").mkdir(parents=True)
+    (data_dir / "secret.json.gz").write_bytes(gzip.compress(b'{"config": {}, "secret": true}'))
+    with pytest.raises(urllib.error.HTTPError) as err:
+        get(f"{server}/api/simulations/..%2Fsecret")
+    assert err.value.code == 404
+    assert post(server + "/api/analyze", {"name": "p.nc", "text": CUT, "simulation": "../secret"})[0] == 404
+
+
 def test_old_simulations_go_once_the_folder_is_full(data_dir, monkeypatch):
     result = check_text(CUT, "part.nc")
     first = save_simulation(result)
