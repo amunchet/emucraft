@@ -259,6 +259,7 @@ body.dragging .drop { display: grid; }
 .fixture-card { border: 1px solid var(--border); border-radius: 6px; padding: 10px; margin-bottom: 10px; background: var(--panel-2); }
 .fixture-card .title { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; font-weight: 650; overflow-wrap: anywhere; }
 .fixture-card .note { margin-top: 6px; }
+.spans span { white-space: nowrap; }
 .fixture-card .remove, .library .remove { border: 0; background: none; color: var(--muted); cursor: pointer; padding: 0 4px; font-size: 16px; line-height: 1; }
 .fixture-card .remove:hover, .library .remove:hover { color: var(--err); }
 .fixture-tools { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }

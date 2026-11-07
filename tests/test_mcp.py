@@ -286,6 +286,22 @@ def test_saved_setups_from_the_call_the_name_and_the_comment(served):
     assert call("delete_fixture_setup", name="kurt-6in") == {"deleted": "kurt-6in"}
 
 
+def test_a_setups_models_are_library_models_even_if_the_programs_folder_has_one_too(served, tmp_path):
+    """A same-named file in the programs folder must not silently stand in for the setup's model."""
+    (tmp_path / "block.stl").write_bytes(stl(hi=(9, 9, 9)))
+    served(tmp_path)
+    upload(hi=(1, 1, 1))
+    entry = {"model": "block.stl", "units": "inch", "position_units": "inch", "at": [1, 1, 0.5]}
+    call("save_fixture_setup", name="x", fixtures=[entry])  # names the programs folder's file: it goes by full path
+    assert call("list_fixtures")["setups"][0]["fixtures"][0]["model"] == str((tmp_path / "block.stl").resolve())
+    # one saved by the viewer names the library's, and every reader must agree
+    from emucraft.fixture import fixture_specs, save_setup
+    save_setup("y", fixture_specs([entry]))
+    size = call("check_program", gcode=CUT, fixture_setup="y")["fixtures"][0]["bounds"]
+    assert size == [[0.5, 0.5, 0], [1.5, 1.5, 1]]
+    assert call("check_program", gcode=CUT, name="y.nc")["fixtures"][0]["bounds"] == size
+
+
 def test_program_info_says_what_a_check_would_use(served):
     served()
     upload()

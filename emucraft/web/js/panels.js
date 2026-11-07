@@ -149,7 +149,7 @@ export function renderSetup(root, report, { units, readOnly, onApply, settings, 
         spec.model ? [field('Scale', 'scale', spec.scale),
           field('Model units', 'units', spec.units, { options: [['inch', 'inch'], ['mm', 'mm']] })]
           : [0, 1, 2].map(i => field(`Size ${'XYZ'[i]} (${u})`, `size.${i}`, nice((spec.max[i] - spec.min[i]) * k)))),
-      el('div', { class: 'note' }, `Spans X${fmtLen(lo[0], u)}..${fmtLen(hi[0], u)} Y${fmtLen(lo[1], u)}..${fmtLen(hi[1], u)} Z${fmtLen(lo[2], u)}..${fmtLen(hi[2], u)}`.replaceAll('-', '\u2011'))));
+      el('div', { class: 'note spans' }, 'Spans', [0, 1, 2].flatMap(i => [' ', el('span', {}, `${'XYZ'[i]}${fmtLen(lo[i], u)}..${fmtLen(hi[i], u)}`)]))));
   }
   if (!readOnly) {
     const models = library?.models || [], setups = library?.setups || [];
@@ -178,15 +178,15 @@ export function renderSetup(root, report, { units, readOnly, onApply, settings, 
       select.addEventListener('change', () => { const name = select.value; select.value = ''; if (name) onpick(name); });
       return select;
     };
-    const setupName = el('input', { type: 'text', 'aria-label': 'Setup name', placeholder: 'Setup name',
-      value: report.program.fixture || report.program.name.replace(/^.*\//, '').replace(/\.[^.]*$/, '') });
+    const ownSetup = report.program.fixture || report.program.name.replace(/^.*\//, '').replace(/\.[^.]*$/, '');
+    const setupName = el('input', { type: 'text', 'aria-label': 'Setup name', placeholder: 'Setup name', value: ownSetup });
     form.append(
       el('div', { class: 'fixture-tools' },
         pick('Add a fixture…', [...models.map(m => el('option', { value: m.name }, m.name)), el('option', { value: 'box' }, 'A box')],
           name => (name === 'box' ? addBox() : addModel(models.find(m => m.name === name)))),
         el('button', { class: 'btn', type: 'button', onclick: () => upload.click() }, 'Upload STL…'), upload),
       el('div', { class: 'fixture-tools' }, setupName,
-        el('button', { class: 'btn', type: 'button', onclick: () => onSaveSetup(setupName.value, readFixtures(form, units), collect(form, units)) }, 'Save setup'),
+        el('button', { class: 'btn', type: 'button', onclick: () => onSaveSetup(setupName.value, readFixtures(form, units), collect(form, units), setupName.value === ownSetup) }, 'Save setup'),
         setups.length ? pick('Load a setup…', setups.map(x => el('option', { value: x.name }, x.name)),
           name => applyFixtures(setups.find(x => x.name === name).fixtures)) : null),
       el('p', { class: 'note' }, 'A setup named after the program is used for it from now on; so is one named by a (FIXTURE: name) comment in the program.'));

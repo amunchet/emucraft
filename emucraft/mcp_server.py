@@ -112,10 +112,10 @@ def _guard_models(specs: List[FixtureSpec]) -> None:
             raise ToolError(f"fixture model {fx.model} is outside the programs folder")
 
 
-def _specs(entries: List[Dict[str, Any]]) -> List[FixtureSpec]:
-    """Fixtures named in a tool call: relative models are in the programs folder, then the library."""
+def _specs(entries: List[Dict[str, Any]], base: Optional[Path] = None) -> List[FixtureSpec]:
+    """Fixtures named in a tool call: relative models are in `base`, then the library."""
     try:
-        specs = config_from_dict({"fixtures": entries}, programs).fixtures
+        specs = config_from_dict({"fixtures": entries}, base).fixtures
     except ConfigError as exc:
         raise ToolError(str(exc)) from None
     _guard_models(specs)
@@ -219,11 +219,12 @@ def check_program(
             overrides["*" if key == "*" else int(str(key).lstrip("Tt"))] = values
         except ValueError:
             raise ToolError(f"'{key}' is not a tool number (use \"20\", \"T20\" or \"*\")") from None
+    specs = None if fixtures is None else _specs(fixtures, programs)
     if fixture_setup is not None:
-        fixtures = read_setup(fixture_setup)
-        if fixtures is None:
+        saved = read_setup(fixture_setup)
+        if saved is None:
             raise ToolError(f"No fixture setup named {fixture_setup}: see list_fixtures")
-    specs = None if fixtures is None else _specs(fixtures)
+        specs = _specs(saved, fixture_dir())  # a setup's bare names are library models, as for every other reader
     try:
         result = check_text(
             text, name, config,
@@ -408,7 +409,7 @@ def save_fixture_setup(name: str, fixtures: List[Dict[str, Any]]) -> dict:
     under a name that is taken replaces that setup: the viewer's Setup tab edits the same ones.
     """
     try:
-        return save_setup(name, _specs(fixtures))
+        return save_setup(name, _specs(fixtures, programs))
     except ValueError as exc:
         raise ToolError(str(exc)) from None
 
@@ -434,13 +435,14 @@ async def health(request):
 @server.custom_route("/fixtures/{name}", methods=["PUT"])
 async def put_fixture(request):
     """Upload a fixture model as the raw request body."""
+    import anyio
     from starlette.responses import JSONResponse
 
     if int(request.headers.get("content-length") or 0) > MAX_BODY:
         return JSONResponse({"error": "request too large"}, status_code=413)
     try:
-        return JSONResponse(save_model(request.path_params["name"], await request.body(),
-                                       request.query_params.get("replace") == "1"))
+        return JSONResponse(await anyio.to_thread.run_sync(
+            save_model, request.path_params["name"], await request.body(), request.query_params.get("replace") == "1"))
     except FileExistsError as exc:
         return JSONResponse({"error": str(exc)}, status_code=409)
     except ValueError as exc:

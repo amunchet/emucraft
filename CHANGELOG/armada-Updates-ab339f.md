@@ -36,3 +36,21 @@ a fixture the check cannot see must not pass quietly.
   clock tick, since mtimes only move with that tick (a test caught it; the key now has the inode too).
 
 `EMUCRAFT_URL` has to be set on `emucraft-mcp` for absolute links; without it, an HTTP server returns `url: null`.
+
+## 2026-11-07 02:53 CST
+Fixes from running the whole flow: a real MCP client through a Caddy with the production prefix, into separate viewer and
+MCP containers sharing the volume, and the viewer in headless Chromium.
+- A setup's bare model names now always mean the library. `fixture_setup` used to look in the programs folder first, so a
+  same-named file there could silently stand in for the setup's model.
+- Saving under the program's own name now hands over to the saved setup, so the note says where the fixtures come from
+  rather than "save a setup to keep it", and the "Saved setup" toast shows instead of being cleared by the re-check.
+- MCP uploads are parsed off the event loop, so a big STL no longer holds up other calls.
+- A refused or unknown `PUT` now reads its body first, so it can't be taken for the next request on a keep-alive connection.
+
+Checked in that setup: raw upload, placing the vise with `at` (same bounds and same 3 collisions as the example's `offset`),
+the link opening through `/emucraft/`, playback, clicking an issue, lowering the vise and re-checking from the link, saving
+there, and the next MCP check finding that setup with no fixtures argument. Links survive a container restart, a viewer
+with read permission only loads one without a single write, and a removed one says it is gone. Also clicked through in
+the browser: boxes, junk and repeated uploads, tilting a Y-up model, dragging from above, with Shift and from the front,
+loading a setup on another program, and deleting from the library. Real WebGL here came from Mesa's software renderer
+(`apk add mesa-dri-gallium mesa-egl mesa-gles`, Chromium with `--use-angle=gl-egl`), which earlier sessions lacked.

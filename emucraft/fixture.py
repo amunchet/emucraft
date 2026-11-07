@@ -188,7 +188,7 @@ def read_setup(name: str) -> Optional[List[dict]]:
 
 
 def list_setups() -> List[dict]:
-    return [{"name": p.stem, "fixtures": read_setup(p.stem)} for p in sorted(_setup_path("x").parent.glob("*.json"))]
+    return [{"name": p.stem, "fixtures": read_setup(p.stem)} for p in sorted((data_dir() / "setups").glob("*.json"))]
 
 
 def save_setup(name: str, specs: List[FixtureSpec]) -> dict:

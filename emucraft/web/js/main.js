@@ -363,7 +363,7 @@ class App {
       library: this.library,
       onApply: changes => this.applySetup(changes),
       onUpload: file => this.uploadFixture(file),
-      onSaveSetup: (name, fixtures, changes) => this.saveSetup(name, fixtures, changes),
+      onSaveSetup: (name, fixtures, changes, own) => this.saveSetup(name, fixtures, changes, own),
       onDelete: (kind, name) => this.deleteFromLibrary(kind, name),
     });
     this.renderOptimize();
@@ -379,7 +379,7 @@ class App {
         next.workholding = { ...(this.settings.workholding || {}), ...changes.workholding };
       }
     }
-    this.analyze(this.source, true, next);
+    return this.analyze(this.source, true, next);
   }
 
   // ------------------------------------------------------------ fixture library
@@ -403,12 +403,13 @@ class App {
     }
   }
 
-  async saveSetup(name, fixtures, changes) {
+  // Re-checks with what was saved. A setup under the program's own name takes over from the form.
+  async saveSetup(name, fixtures, changes, own) {
     try {
       const saved = await api(`api/setups/${encodeURIComponent(name)}`, { fixtures }, 'PUT');
       this.library = await api('api/fixtures');
+      await this.applySetup({ ...changes, fixtures: own ? undefined : fixtures });
       this.toast(`Saved setup ${saved.name}`);
-      this.applySetup({ ...changes, fixtures });  // what is on screen is what was saved
     } catch (err) {
       this.toast(err.message);
     }
