@@ -133,6 +133,7 @@ class App {
       return;
     }
     if (request !== this.requests) return; // a newer load won
+    if (source !== this.source) this.setupName = null; // another program starts from its own setup name
     this.source = source;
     this.settings = useSettings;
     // what the form falls back on while the setup asked for cannot be checked
@@ -360,7 +361,7 @@ class App {
     renderSetup($('tab-setup'), r, {
       units: this.units, readOnly: !!EMBED, settings: this.settings, holdBase: this.holdBase,
       materials: this.info?.workholding_materials, holdDefaults: this.info?.workholding_defaults, vises: this.info?.vises,
-      library: this.library,
+      library: this.library, lastSetup: this.setupName,
       onApply: changes => this.applySetup(changes),
       onUpload: file => this.uploadFixture(file),
       onSaveSetup: (name, fixtures, changes, own) => this.saveSetup(name, fixtures, changes, own),
@@ -404,10 +405,12 @@ class App {
   }
 
   // Re-checks with what was saved. A setup under the program's own name takes over from the form.
+  // The name box keeps the name, so saving again updates the same setup.
   async saveSetup(name, fixtures, changes, own) {
     try {
       const saved = await api(`api/setups/${encodeURIComponent(name)}`, { fixtures }, 'PUT');
       this.library = await api('api/fixtures');
+      this.setupName = name;
       await this.applySetup({ ...changes, fixtures: own ? undefined : fixtures });
       this.toast(`Saved setup ${saved.name}`);
     } catch (err) {

@@ -54,3 +54,10 @@ with read permission only loads one without a single write, and a removed one sa
 the browser: boxes, junk and repeated uploads, tilting a Y-up model, dragging from above, with Shift and from the front,
 loading a setup on another program, and deleting from the library. Real WebGL here came from Mesa's software renderer
 (`apk add mesa-dri-gallium mesa-egl mesa-gles`, Chromium with `--use-angle=gl-egl`), which earlier sessions lacked.
+
+## 2026-11-07 11:52 CST
+Setup tab: after you save a setup under a name of your own, the name box keeps that name, so saving again updates the
+same setup. Before, the re-check put the program's name back in the box, and a second save quietly wrote another setup
+under that name, which then took over for the program. Opening another program starts again from its own name. Found
+while taking screenshots of the feature, and checked in the browser: save, drag and re-check, then open a program that
+names its setup in a `(FIXTURE: …)` comment.

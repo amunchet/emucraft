@@ -112,7 +112,7 @@ function sourceOf(spec, key) {
   return s.replace('program line', 'line').replace('config ', '');
 }
 
-export function renderSetup(root, report, { units, readOnly, onApply, settings, holdBase, materials, holdDefaults, vises, library, onUpload, onSaveSetup, onDelete }) {
+export function renderSetup(root, report, { units, readOnly, onApply, settings, holdBase, materials, holdDefaults, vises, library, lastSetup, onUpload, onSaveSetup, onDelete }) {
   root.textContent = '';
   const u = units === 'mm' ? 'mm' : 'in';
   if (readOnly) root.append(el('p', { class: 'note' }, 'This is a saved report. Run `emucraft serve` to change the setup and re-check.'));
@@ -179,7 +179,7 @@ export function renderSetup(root, report, { units, readOnly, onApply, settings, 
       return select;
     };
     const ownSetup = report.program.fixture || report.program.name.replace(/^.*\//, '').replace(/\.[^.]*$/, '');
-    const setupName = el('input', { type: 'text', 'aria-label': 'Setup name', placeholder: 'Setup name', value: ownSetup });
+    const setupName = el('input', { type: 'text', 'aria-label': 'Setup name', placeholder: 'Setup name', value: lastSetup || ownSetup });
     form.append(
       el('div', { class: 'fixture-tools' },
         pick('Add a fixture…', [...models.map(m => el('option', { value: m.name }, m.name)), el('option', { value: 'box' }, 'A box')],
