@@ -167,7 +167,7 @@ class FixtureSpec:
 
     The model is scaled by ``scale`` (its lengths are in ``units``, default the
     config's) and turned ``rotate`` degrees about X, then Y, then Z. ``at`` then
-    puts the center of its bounding box at that point; without it, ``offset``
+    puts the center of its own (unturned) bounding box at that point; without it, ``offset``
     moves the model's own origin, about which it turned. Both are in
     ``position_units``, default the config's.
     """

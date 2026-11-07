@@ -5,6 +5,7 @@ import gzip
 import http.client
 import json
 import os
+import socket
 import struct
 import threading
 import urllib.error
@@ -274,6 +275,20 @@ def test_a_refused_upload_leaves_the_connection_usable(server, path, status):
     conn.close()
 
 
+@pytest.mark.parametrize("method", ["GET", "HEAD"])
+def test_a_read_cannot_carry_a_write(server, method):
+    """The proxy lets anyone who can read send a GET: a DELETE in its body must not run."""
+    request("PUT", server + "/api/fixtures/kept.stl", stl())
+    hidden = b"DELETE /api/fixtures/kept.stl HTTP/1.1\r\nHost: x\r\n\r\n"
+    host, port = server.split("//")[1].split(":")
+    with socket.create_connection((host, int(port)), timeout=10) as s:
+        s.sendall(b"%s /api/info HTTP/1.1\r\nHost: x\r\nContent-Length: %d\r\n\r\n%s" % (method.encode(), len(hidden), hidden))
+        got = b""
+        while chunk := s.recv(65536):  # the server ends the connection after one answer
+            got += chunk
+    assert got.count(b"HTTP/1.1 ") == 1 and [m["name"] for m in list_models()] == ["kept.stl"]
+
+
 def test_analyze_with_fixtures_placed_in_the_setup_tab(server):
     request("PUT", server + "/api/fixtures/block.stl", stl(hi=(1, 1, 1)))
     placed = {"name": "block", "model": "block.stl", "units": "inch", "position_units": "inch", "at": [1, 1, 0.5]}
@@ -376,3 +391,12 @@ def test_old_simulations_go_once_the_folder_is_full(data_dir, monkeypatch):
     left = {f.name.split(".")[0] for f in (data_dir / "simulations").iterdir()}
     assert left == {second, third}
     assert KEEP_SIMULATIONS > 1 << 30
+
+
+def test_a_simulation_pruned_by_another_check_is_no_error(data_dir, monkeypatch):
+    """Checks saved at the same moment prune together, so one can find a file already gone."""
+    real = Path.glob
+    monkeypatch.setattr(Path, "glob", lambda self, pattern: [*real(self, pattern), self / f"{'0' * 32}.json.gz"])
+    monkeypatch.setattr("emucraft.payload.KEEP_SIMULATIONS", 1)
+    ident = save_simulation(check_text(CUT, "part.nc"))
+    assert (data_dir / "simulations" / f"{ident}.json.gz").is_file()

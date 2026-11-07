@@ -388,8 +388,10 @@ finds (the report's `fixture_source` says which):
 2. The saved setup a comment in the program names, as in `(FIXTURE: kurt-6in)`,
    however it is capitalized. Another wording is a `comment_rules` entry away:
    give the pattern `field = "program.fixture"`, say for `(VISE: kurt-6in)`. If
-   that setup is not saved, the check warns: it did not see the fixture.
-3. The saved setup named after the program: `bracket.nc` uses `bracket`.
+   that setup is not saved, the check warns that it did not see the fixture,
+   and goes on with the config's.
+3. Without such a comment, the saved setup named after the program:
+   `bracket.nc` uses `bracket`.
 4. `[[fixtures]]` in the config (for the MCP server, its saved settings).
 
 **In the viewer**, the Setup tab has a card for each fixture. *Upload STL…* keeps
@@ -424,8 +426,10 @@ max = [-0.5, 2.0, 0.1]
 ```
 
 `at` is the easy one to use: a CAD model's origin can be anywhere, but its center
-is where it looks to be, and `rotate` then turns it where it stands. With `offset`
-the model turns about its own origin instead.
+is where it looks to be, and `rotate` then turns it about that point, where it
+stands. (That point is the middle of the model's own box: turned to an angle
+that is not a multiple of 90°, the box around the turned model can sit a little
+off it.) With `offset` the model turns about its own origin instead.
 
 The fixture is seen from +Z as a height field, like the stock, and every move
 runs over it through the same kernel with the same tools, as a move that must

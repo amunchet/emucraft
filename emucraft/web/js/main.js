@@ -433,7 +433,8 @@ class App {
   // With Move on, a press on a fixture picks it up: across the table, or with Shift up and down. Views from
   // the side have no table to drag on, so they move it in their own plane.
   grabFixture(e) {
-    if (!$('move-fixtures').checked || !this.fixtures?.visible) return;
+    // not while a check runs: until it returns, the meshes can be out of step with the cards
+    if (!$('move-fixtures').checked || !this.fixtures?.visible || $('status-badge').classList.contains('busy')) return;
     const hit = this.viewer.ray(e.clientX, e.clientY).intersectObjects(this.fixtures.children, false)[0];
     if (!hit) return;
     const dir = this.viewer.camera.getWorldDirection(new THREE.Vector3());

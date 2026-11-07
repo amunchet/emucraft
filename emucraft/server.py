@@ -181,6 +181,11 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "max-age=3600" if cache else "no-cache")
         self.send_header("X-Content-Type-Options", "nosniff")
+        # A body nobody read would be taken for the next request on this connection: a GET, which the proxy
+        # lets any reader send, could carry a DELETE. So such a connection ends here.
+        if self.headers.get("Transfer-Encoding") or (
+                self.command in ("GET", "HEAD", "DELETE") and self.headers.get("Content-Length", "0") != "0"):
+            self.send_header("Connection", "close")
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(body)

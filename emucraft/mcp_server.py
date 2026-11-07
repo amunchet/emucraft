@@ -199,8 +199,8 @@ def check_program(
     fixtures    - solids the tool must not touch, for this call, instead of any saved or configured
                   ones ([] for none). Each is a box {"name": "toe clamp", "min": [x, y, z], "max": [x,
                   y, z]} or {"name": "vise", "model": "kurt.stl"} (from list_fixtures, or a file in the
-                  programs folder), placed with "at": [x, y, z], where the center of its bounding box
-                  goes. Optional: rotate (degrees about Z, or [x, y, z], about its center), scale,
+                  programs folder), placed with "at": [x, y, z], where the center of its own (unturned)
+                  bounding box goes. Optional: rotate (degrees about Z, or [x, y, z], about that center), scale,
                   units ("inch" or "mm", the model's lengths: an STL does not say) and position_units
                   (those of at). Lengths default to the config's units, or program units when it
                   sets none. Without at, offset [x, y, z] moves the model's own origin instead.
@@ -440,9 +440,15 @@ async def put_fixture(request):
 
     if int(request.headers.get("content-length") or 0) > MAX_BODY:
         return JSONResponse({"error": "request too large"}, status_code=413)
+    chunks, size = [], 0
+    async for chunk in request.stream():  # counted as it comes: a chunked upload says no length up front
+        size += len(chunk)
+        if size > MAX_BODY:
+            return JSONResponse({"error": "request too large"}, status_code=413)
+        chunks.append(chunk)
     try:
         return JSONResponse(await anyio.to_thread.run_sync(
-            save_model, request.path_params["name"], await request.body(), request.query_params.get("replace") == "1"))
+            save_model, request.path_params["name"], b"".join(chunks), request.query_params.get("replace") == "1"))
     except FileExistsError as exc:
         return JSONResponse({"error": str(exc)}, status_code=409)
     except ValueError as exc:

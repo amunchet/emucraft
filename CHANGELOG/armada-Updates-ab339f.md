@@ -61,3 +61,19 @@ same setup. Before, the re-check put the program's name back in the box, and a s
 under that name, which then took over for the program. Opening another program starts again from its own name. Found
 while taking screenshots of the feature, and checked in the browser: save, drag and re-check, then open a program that
 names its setup in a `(FIXTURE: …)` comment.
+
+## 2026-11-07 12:18 CST
+Fixes from reviewing the branch:
+- **A read could carry a write.** The viewer never read a GET's body. On a kept-alive connection, a DELETE or PUT
+  hidden in that body ran as the next request, and the proxy only asks for the write permission by method. So a user
+  who could only read could delete fixture models or empty setups (reproduced on the backend). A GET, HEAD or DELETE
+  that carries a body, or any chunked request, now ends its connection after the answer.
+- Two MCP checks saving at once both prune old simulations past 2 GB. The second could find a file the first had
+  already removed and fail a check that had succeeded. Pruning now leaves that file to the other check.
+- The raw `PUT /fixtures/<name>` upload counts a chunked body as it arrives, so the 256 MB limit holds without a
+  Content-Length too.
+- Move ignores presses while a check runs. Until the check returns, the meshes can be out of step with the cards,
+  so a drag could move the wrong fixture.
+- Docs: a `(FIXTURE: …)` comment replaces the program-name lookup rather than coming before it, and `at` is the
+  center of the model's own unturned box.
+Each fix has a test that fails without it. The Move guard was checked in the browser with the check held open.

@@ -133,10 +133,13 @@ def save_simulation(result: CheckResult, settings: Optional[dict] = None) -> str
            "settings": settings or {}, "payload": analysis_payload(result)}
     write_file(path, gzip.compress(json.dumps(doc).encode("utf-8"), compresslevel=5))
     total = 0
-    for file in sorted(path.parent.glob("*.json.gz"), key=lambda f: f.stat().st_mtime_ns, reverse=True):
-        total += file.stat().st_size
-        if total > KEEP_SIMULATIONS and file != path:
-            file.unlink()
+    try:
+        for file in sorted(path.parent.glob("*.json.gz"), key=lambda f: f.stat().st_mtime_ns, reverse=True):
+            total += file.stat().st_size
+            if total > KEEP_SIMULATIONS and file != path:
+                file.unlink()
+    except FileNotFoundError:  # checks saved at the same moment prune together: another one got there first
+        pass
     return ident
 
 

@@ -212,9 +212,9 @@ def fixture_specs(entries: List[dict]) -> List[FixtureSpec]:
 def choose_fixtures(program: Program, config: Config) -> Tuple[List[FixtureSpec], Optional[str], List[Message]]:
     """The fixtures a program runs in when the caller did not choose, and where they came from.
 
-    First found: the saved setup its (FIXTURE: name) comment names, the saved
-    setup named after the program, the config's. A setup the program counts on
-    but the check cannot use is reported: an unseen fixture is not a safe one.
+    The saved setup its (FIXTURE: name) comment names or, without such a comment,
+    the saved setup named after the program; else the config's. A setup the program
+    counts on but the check cannot use is reported: an unseen fixture is not a safe one.
     """
     note, line = program.fixture_note, program.fixture_line
     name = clean_name(note or Path(program.name).stem)

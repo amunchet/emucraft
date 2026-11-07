@@ -380,3 +380,10 @@ def test_big_models_go_up_as_raw_files(monkeypatch):
     assert client.put("/fixtures/junk.stl", content=b"nope", headers=bearer).status_code == 400
     assert client.get("/fixtures/big.stl", headers=bearer).status_code == 405  # up only
     assert client.get("/health").status_code == 200
+
+
+def test_a_chunked_upload_has_the_same_size_limit(monkeypatch):
+    """Without a Content-Length the body is counted as it comes, not read whole first."""
+    monkeypatch.setattr(mcp_server, "MAX_BODY", 1000)
+    response = http_client().put("/fixtures/big.stl", content=iter([b"x" * 600, b"x" * 600]))
+    assert response.status_code == 413
