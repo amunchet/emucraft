@@ -168,3 +168,39 @@ def test_http_app_needs_the_token(monkeypatch):
         got = http.post("/mcp", json=hello, headers={
             "Authorization": "Bearer secret", "Accept": "application/json, text/event-stream"})
         assert got.status_code == 200
+
+
+def test_fixtures_for_one_call(served):
+    served(EXAMPLES)
+    box = [{"name": "toe clamp", "min": [-1, -1, -0.5], "max": [5, 4, -0.1]}]
+    assert not call("check_program", gcode=HEADER)["fixtures"]
+    report = call("check_program", gcode=HEADER, fixtures=box)
+    assert [f["name"] for f in report["fixtures"]] == ["toe clamp"]
+    with pytest.raises(RuntimeError, match="needs either model"):
+        call("check_program", gcode=HEADER, fixtures=[{"name": "nothing"}])
+    assert call("check_program", path="vise/vise_demo.nc", fixtures=[])["fixtures"] == []
+
+
+def test_saved_fixture_models_are_relative_to_the_programs_folder(served, tmp_path, settings_file):
+    served(EXAMPLES)
+    saved = call("update_settings", changes={"fixtures": [{"name": "vise", "model": "vise/kurt.stl"}]})
+    assert saved["settings"]["fixtures"][0]["model"] == str(EXAMPLES.resolve() / "vise" / "kurt.stl")
+    assert [f["name"] for f in call("check_program", gcode=HEADER)["fixtures"]] == ["vise"]
+
+
+def test_a_model_outside_the_programs_folder_is_not_saved(served, tmp_path, settings_file):
+    (tmp_path / "plate.stl").write_text("solid p\nendsolid p\n")
+    served(EXAMPLES)
+    with pytest.raises(RuntimeError, match="Settings not saved: fixture model .* is outside the programs folder"):
+        call("update_settings", changes={"fixtures": [{"model": str(tmp_path / "plate.stl")}]})
+    assert not settings_file.exists()
+
+
+def test_call_fixtures_take_their_units_like_the_configs_own(settings_file):
+    mm = "G21\n" + HEADER
+    box = {"name": "b", "min": [0, 0, -2], "max": [1, 1, -1]}
+    assert call("check_program", gcode=mm, fixtures=[box])["fixtures"][0]["bounds"][1][0] == pytest.approx(1)
+    call("update_settings", changes={"units": "inch"})
+    assert call("check_program", gcode=mm, fixtures=[box])["fixtures"][0]["bounds"][1][0] == pytest.approx(25.4)
+    explicit = {**box, "units": "mm"}
+    assert call("check_program", gcode=mm, fixtures=[explicit])["fixtures"][0]["bounds"][1][0] == pytest.approx(1)

@@ -104,6 +104,7 @@ flowchart LR
 | `shank` | Material taller than the flute length is cut: the shank rubs. Also a shank wider than the cutter touching the stock |
 | `holder` | The holder cylinder (`holder_diameter`, bottom at `stickout` above the tip) touches the stock, including stock left beside the cut |
 | `fixture` | The cutter, shank or holder touches a fixture from the config (a vise, clamp or plate), on any move |
+| `broken-tool` | Had the tool broken as its run started, the holder would hit the stock that run found, which a broken tool never cuts (warning; `broken_tool = false` under `[check]`, or Setup > Machine & check in the viewer, turns it off; [`examples/broken_tool_demo.nc`](examples/broken_tool_demo.nc) shows one) |
 | `table` | The tip goes below the table / fixture plane (default: the stock bottom) |
 | `link-cut` | A feed move at or above `link_feed` (high-feed "fly" links) removes material (warning) |
 | `travel` | The path leaves the machine travel limits, if configured |
@@ -236,7 +237,7 @@ FAIL  0 collisions, 1 workholding failure
 Workholding: vise, steel, worn tool x1.5, safety factor 2, friction 0.15
   weakest cut: line 17, T1 0.2500 deep x 0.4788 wide at F12 S3000: 399 lbf sideways, 179 lbf lift; the part rocks in the jaws
   40 ft-lbf (4148 lbf) is NOT enough: margin 1.77x, needs 2x
-  needs at least 44.4 ft-lbf (4691 lbf); the fixture takes up to 80 ft-lbf
+  needs at least 44.5 ft-lbf (4691 lbf); the fixture takes up to 80 ft-lbf
 ```
 
 **The cutting load.** The simulation splits the path into pieces a quarter of
@@ -332,8 +333,10 @@ What it needs and assumes:
   separately: that is what the safety factor is for.
 
 The viewer shows the result at the top of the Issues tab and lets you change
-the setup under Setup > Workholding; the MCP server's `check_program` takes the
-same options as `workholding`.
+the setup under Setup > Workholding (Fixture: Off turns it off, even over a
+config file's `[workholding]`); the MCP server's `check_program` takes the same
+options as `workholding`. [`examples/workholding/`](examples/workholding) is a
+slot in a Kurt vise that needs more torque than it is given.
 
 ## Configuration
 
@@ -474,7 +477,7 @@ pip install -e ".[mcp]"
 
 | Tool | What it does |
 |---|---|
-| `check_program` | Full collision check. Returns status, issues with lines and depths, interpreter messages, and the tool geometry with where each value came from. Takes `stock`, per-tool `tools` overrides, `resolution`, and `workholding` options (see [Workholding](#workholding)) |
+| `check_program` | Full collision check. Returns status, issues with lines and depths, interpreter messages, and the tool geometry with where each value came from. Takes `stock`, per-tool `tools` overrides, `resolution`, `workholding` options (see [Workholding](#workholding)) and `fixtures` for that call (see [Fixtures](#fixtures)) |
 | `program_info` | What was read from comments and macro variables, with each value's line and text, without simulating. Pass a few comment lines as `gcode` to try detection settings |
 | `list_programs` | The programs in the `--programs` folder, as `path` values for the other tools |
 | `get_settings` / `update_settings` / `reset_settings` | View and change the server's saved settings, mainly comment detection (`comment_aliases`, `comment_rules`, `variable_rules`, `check.fuzz_threshold`) and tool defaults |
@@ -492,7 +495,9 @@ emucraft mcp --http --host 0.0.0.0 --port 8000 --programs /programs  # streamabl
 
 With `--programs`, `path` and `config_path` are relative to that folder and
 cannot leave it. Over HTTP without it, only inline `gcode` is accepted, so a
-caller cannot read the server's files. With `EMUCRAFT_TOKEN` set, `/mcp`
+caller cannot read the server's files, and fixture models have to be in the
+programs folder (a relative `model` saved with `update_settings` is relative to
+it). With `EMUCRAFT_TOKEN` set, `/mcp`
 needs `Authorization: Bearer <token>`. Deployed, this is the `emucraft-mcp`
 service (see [Web Deployment](#web-deployment)).
 

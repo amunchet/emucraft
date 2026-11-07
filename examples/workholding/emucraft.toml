@@ -1,0 +1,12 @@
+# The workholding demo: a 4 x 2 x 1 in steel block in a Kurt D688. A full-width
+# slot rocks it in the jaws at 40 ft-lbf; the check says what torque holds it.
+# Try it in the viewer under Setup > Workholding.
+
+units = "inch"
+
+[workholding]
+material = "steel"
+fixture = "vise"
+vise = "d688"
+grip = 0.5
+torque = 40

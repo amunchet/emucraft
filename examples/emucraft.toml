@@ -17,6 +17,7 @@ tool_change_time = 8           # seconds
 # resolution = 0.002           # cell size; default picks ~6 million cells
 link_feed = 700                # feed moves this fast are links and must not cut
 # block_delete = true          # skip blocks that start with '/'
+# broken_tool = false          # skip the holder check for a tool that breaks as its run starts
 
 # Tool data the CAM post does not write. Program comments fill in the rest.
 [tools.20]

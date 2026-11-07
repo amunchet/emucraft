@@ -321,3 +321,42 @@ def test_self_centering_vise_stops_at_60_ft_lbf():
     r = hold(material="steel", vise="scd640", grip=0.5, torque=70)
     assert r.workholding["max_torque"] == pytest.approx(60)
     assert "workholding-torque" in [m.code for m in r.messages if m.level == "error"]
+
+
+DRILLING = BLOCK + """( Tool Number: 2)
+( Tool:   Drill)
+( DIAMETER: 0.5)
+( Number of Flutes: 2)
+G20 G17 G90
+T2 M6
+S1500 M3
+G0 X2. Y1.
+G0 Z0.1
+G1 Z-0.5 F5.
+G0 Z0.1
+M30
+"""
+
+
+def test_a_drill_failure_names_its_torque_not_a_side_force():
+    result = hold(DRILLING, material="steel", fixture="vise", vise="d688", grip=0.5, torque=2)
+    issue = next(i for i in result.issues if i.kind == "workholding")
+    assert "turns in the jaws" in issue.message and "of cutting torque" in issue.message
+    assert "sideways" not in issue.message
+
+
+def test_the_reported_least_torque_itself_holds(capsys, tmp_path):
+    (tmp_path / "part.nc").write_text(SLOT)
+    (tmp_path / "emucraft.toml").write_text('[workholding]\nmaterial = "steel"\nfixture = "vise"\nvise = "d688"\n'
+                                            'grip = 0.5\ntorque = 40\n')
+    assert main(["check", str(tmp_path / "part.nc")]) == 1
+    least = float(capsys.readouterr().out.split("needs at least ")[1].split()[0])
+    assert hold(material="steel", fixture="vise", vise="d688", grip=0.5, torque=least).status == "pass"
+
+
+def test_a_cleared_option_goes_back_to_its_default():
+    config = config_from_dict({"workholding": {**VISE, "torque": 40}})
+    config.check.resolution = 0.005
+    result = check_text(SLOT, "part.nc", config, workholding={"torque": None, "force": 9000})
+    assert result.workholding["torque"] is None
+    assert result.workholding["force"] == pytest.approx(9000)

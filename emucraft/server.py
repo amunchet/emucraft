@@ -66,6 +66,8 @@ def apply_settings(config: Config, settings: Optional[dict]):
         if rapid_mode not in ("linear", "dogleg"):
             raise ValueError("rapid_mode must be 'linear' or 'dogleg'")
         config.machine.rapid_mode = rapid_mode
+    if settings.get("broken_tool") is not None:
+        config.check.broken_tool = bool(settings["broken_tool"])
     stock = settings.get("stock")
     if stock:
         if len(stock) != 6:
@@ -90,8 +92,10 @@ def apply_settings(config: Config, settings: Optional[dict]):
         overrides[number] = clean
     if overrides:
         kwargs["overrides"] = overrides
-    hold = {k: v for k, v in (settings.get("workholding") or {}).items() if v is not None and v != ""}
-    if hold:
+    hold = settings.get("workholding") or {}
+    if hold.get("fixture") == "off":  # also over the config file's [workholding]
+        config.workholding = {}
+    elif hold:
         kwargs["workholding"] = hold
     return config, kwargs
 
@@ -290,7 +294,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def _optimized_name(name: str) -> str:
-    stem, dot, ext = name.rpartition(".")
+    stem, dot, ext = Path(name).name.rpartition(".")  # a download: no example subfolder
     return f"{stem}.opt.{ext}" if dot else f"{name}.opt"
 
 

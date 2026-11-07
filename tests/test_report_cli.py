@@ -54,7 +54,7 @@ def test_text_report_for_a_failing_program(crash):
 def test_text_report_for_a_clean_program(makino):
     text = format_text(makino)
     assert "WARN  0 collisions, 5 program warnings" in text
-    assert "T20  flat  D0.3750  flutes 1.0000  stick-out 1.4000  holder D1.3000" in text
+    assert "T20  flat  D0.3750  1 flute  flute length 1.0000  stick-out 1.4000  holder D1.3000" in text
     assert "! line 352     M#150 uses an undefined variable; word ignored (x9)" in text
     assert "Cycle time 7:" in text
     assert "start-position" not in text and "machine position" not in text  # info hidden...
@@ -144,7 +144,7 @@ def test_tool_overrides(capsys):
                            "--tool", "*:holder_diameter=2,stickout=0.05")
     data = json.loads(out)
     assert code == 1
-    assert {i["kind"] for i in data["issues"]} == {"holder"}
+    assert {i["kind"] for i in data["issues"] if i["severity"] == "error"} == {"holder"}
     assert data["tools"]["20"]["stickout"] == 0.05
     assert data["tools"]["20"]["source"]["stickout"] == "override"
 

@@ -116,6 +116,8 @@ class App {
     if (request !== this.requests) return; // a newer load won
     this.source = source;
     this.settings = useSettings;
+    // what the form falls back on while the setup asked for cannot be checked
+    this.holdBase = payload.report.workholding ?? (useSettings.workholding ? this.holdBase : null);
     // an optimization belongs to one path and one setup
     this.optimized = null;
     $('path-color').querySelector('[value="optimized"]').disabled = true;
@@ -140,16 +142,18 @@ class App {
   }
 
   showStatus(r) {
-    const holding = r.issues.filter(i => i.kind === 'workholding').length;
-    const collisions = r.issues.filter(i => i.severity === 'error').length - holding;
-    const warnings = r.issues.length - collisions - holding;
+    const failures = r.issues.filter(i => i.kind === 'workholding').length;
+    const collisions = r.issues.filter(i => i.severity === 'error').length - failures;
+    const warnings = r.issues.length - collisions - failures;
+    const holding = failures + r.messages.filter(m => m.code === 'workholding-torque').length;
+    const unchecked = r.messages.some(m => m.code === 'workholding' && m.level === 'error');
     const failed = collisions ? `${collisions} collision${collisions === 1 ? '' : 's'}`
-      : holding ? 'Workholding fails' : 'Program errors';
+      : holding ? 'Workholding fails' : unchecked ? 'Workholding not checked' : 'Program errors';
     this.setBadge(r.status, r.status === 'fail' ? failed
       : r.status === 'warn' ? (warnings ? `${warnings} warning${warnings === 1 ? '' : 's'}` : 'Passed with notes') : 'No collisions');
     const count = $('issue-count');
-    count.textContent = r.issues.length ? String(r.issues.length) : '✓';
-    count.className = `count ${collisions + holding ? '' : r.issues.length ? 'warn' : 'ok'}`;
+    count.textContent = r.issues.length ? String(r.issues.length) : r.status === 'fail' ? '!' : '✓';
+    count.className = `count ${r.status === 'fail' ? '' : r.issues.length ? 'warn' : 'ok'}`;
   }
 
   // The display grid must fit the GPU's texture size; coarsen it if not.
@@ -280,7 +284,7 @@ class App {
       colors[4 * i] = c[0]; colors[4 * i + 1] = c[1]; colors[4 * i + 2] = c[2]; colors[4 * i + 3] = 255;
     }
     for (const issue of this.report.issues) {
-      if (!['rapid-cut', 'spindle-off-cut', 'link-cut', 'shank', 'holder'].includes(issue.kind)) continue;
+      if (!['rapid-cut', 'spindle-off-cut', 'link-cut', 'shank', 'holder', 'broken-tool', 'fixture', 'workholding'].includes(issue.kind)) continue;
       const rgb = issue.severity === 'error' ? [255, 70, 70] : [245, 180, 60];
       for (let m = issue.moves[0]; m <= issue.moves[1] && m < n; m++) {
         colors[4 * m] = rgb[0]; colors[4 * m + 1] = rgb[1]; colors[4 * m + 2] = rgb[2];
@@ -329,14 +333,16 @@ class App {
       onLine: line => this.seekLine(line, true),
     });
     renderSetup($('tab-setup'), r, {
-      units: this.units, readOnly: !!EMBED, settings: this.settings,
+      units: this.units, readOnly: !!EMBED, settings: this.settings, holdBase: this.holdBase,
       materials: this.info?.workholding_materials, holdDefaults: this.info?.workholding_defaults, vises: this.info?.vises,
       onApply: changes => {
         let next = {};
         if (changes) {
           next = { ...this.settings, ...changes, tools: { ...(this.settings.tools || {}) } };
           for (const [t, values] of Object.entries(changes.tools || {})) next.tools[t] = { ...(next.tools[t] || {}), ...values };
-          if (changes.workholding) next.workholding = { ...(this.settings.workholding || {}), ...changes.workholding };
+          if (changes.workholding && changes.workholding.fixture !== 'off') {
+            next.workholding = { ...(this.settings.workholding || {}), ...changes.workholding };
+          }
         }
         this.analyze(this.source, true, next);
       },
@@ -545,7 +551,7 @@ class App {
     const hit = this.report.issues.find(is => i >= is.moves[0] && i <= is.moves[1]);
     const hud = $('hud');
     hud.textContent = '';
-    if (hit && player.move > 0) hud.append(el('div', { class: 'hit' }, `⚠ ${hit.message}`));
+    if (hit && player.move > 0) hud.append(el('div', { class: `hit ${hit.severity}` }, `⚠ ${hit.message}`));
     if (this.pick) hud.append(el('div', {}, this.pick));
     if (player.move > 0 && player.move < n) {
       const kind = f & FLAG_RAPID ? 'rapid' : f & FLAG_CYCLE ? 'drill cycle' : f & FLAG_ARC ? 'arc' : 'feed';

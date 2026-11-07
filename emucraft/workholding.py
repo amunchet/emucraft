@@ -173,12 +173,16 @@ def _number(value) -> bool:
 
 def apply_values(spec: HoldSpec, values: Dict[str, object], units: str, factor: float) -> None:
     """Set fields from config values: lengths times ``factor``; forces and
-    torques in lbf and ft*lbf when ``units`` is "inch", else in N and N*m."""
+    torques in lbf and ft*lbf when ``units`` is "inch", else in N and N*m.
+    None puts a field back to its default."""
     inch = units == "inch"
     for key, value in values.items():
         if key not in OPTIONS:
             raise ValueError(f"unknown workholding option '{key}'")
         if value is None:
+            setattr(spec, key, getattr(HoldSpec(), key))
+            if key == "bolt":
+                spec.bolt_area = None
             continue
         if key in _TEXT:
             value = str(value).lower()
@@ -527,8 +531,11 @@ def analyze(program: Program, tools: Dict[int, ToolSpec], stock: StockSpec, grid
         if text is None:
             text = (f"Cutting load can move the part: it {why} (holding margin {margin:.2f}x, needs "
                     f"{spec.safety_factor:g}x)")
-        text += (f"; T{tool} pushes {weak.side * f_out:.0f} {f_unit} sideways"
-                 + (f" and lifts {weak.lift * f_out:.0f} {f_unit}" if weak.lift > 0 else ""))
+        if weak.side * f_out < 0.5:  # a drill: its torque is the load
+            text += f"; T{tool} twists it with {weak.torque * u / 1000.0 * t_out:.1f} {t_unit} of cutting torque"
+        else:
+            text += (f"; T{tool} pushes {weak.side * f_out:.0f} {f_unit} sideways"
+                     + (f" and lifts {weak.lift * f_out:.0f} {f_unit}" if weak.lift > 0 else ""))
         j = 3 * weak.piece + 3
         return Issue("workholding", "error", text, first, last, program.line[first], program.line[last],
                      (fpts[j], fpts[j + 1], fpts[j + 2]), depth=weak.depth, tool=tool, moves=last - first + 1)
