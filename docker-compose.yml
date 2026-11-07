@@ -30,6 +30,8 @@ services:
 
   # emucraft's MCP server: the emucraft image, run as its own service. Mount programs on /programs to check them
   # by `path`; otherwise callers pass G-code inline. Its detection settings (update_settings) are kept in /data.
+  # It shares emucraft-store with the viewer, which is where the links it hands out open: set EMUCRAFT_URL to the
+  # viewer's public address, or they have no host to go to.
   emucraft-mcp:
     image: emucraft:latest
     container_name: emucraft-mcp
@@ -44,8 +46,10 @@ services:
     environment:
       - EMUCRAFT_TOKEN=${EMUCRAFT_TOKEN:-}
       - EMUCRAFT_MCP_CONFIG=/data/mcp.json
+      - EMUCRAFT_URL=${EMUCRAFT_URL:-}
     volumes:
       - emucraft-mcp:/data
+      - emucraft-store:/store
     #   - ./programs:/programs:ro
     networks:
       - emucraft

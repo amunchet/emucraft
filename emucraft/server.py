@@ -6,6 +6,15 @@
     GET  /api/programs/<name>     program text
     POST /api/analyze             {name, text, settings}          -> report + path
     POST /api/optimize            {name, text, settings, options} -> new program
+    GET  /api/fixtures            uploaded fixture models and saved fixture setups
+    PUT  /api/fixtures/<name>     the raw STL file (?replace=1 to overwrite) -> model
+    DELETE /api/fixtures/<name>
+    PUT  /api/setups/<name>       {fixtures}: keep fixtures as placed
+    DELETE /api/setups/<name>
+    GET  /api/simulations/<id>    a check saved by the MCP server: {name, text, config, settings, payload}
+
+Anyone who can reach PUT and DELETE can change the shared library, so keep them behind what guards the rest
+of the server's writes (the production Caddyfile asks for the write permission).
 
 Lengths in ``settings`` are in program units. Binary arrays travel as base64
 of little-endian typed arrays so the browser can hand them to its
@@ -32,11 +41,12 @@ from urllib.parse import unquote, urlparse
 
 from . import __version__
 from .check import check_text, parse_program
-from .config import ConfigError, find_config, load_config
+from .config import ConfigError, config_from_dict, find_config, load_config
+from .fixture import delete_model, delete_setup, fixture_specs, list_models, list_setups, save_model, save_setup
 from .kernel import KernelError
-from .model import Config, StockSpec
+from .model import Config, FixtureSpec, StockSpec, fixture_dir
 from .optimize import MATERIALS, OptimizeSpec, optimize
-from .payload import WEB, analysis_payload, b64
+from .payload import WEB, analysis_payload, b64, load_simulation
 from .workholding import MATERIALS as HOLD_MATERIALS, VISES, HoldSpec
 
 EXAMPLES = Path(__file__).resolve().parent.parent / "examples"
@@ -97,6 +107,8 @@ def apply_settings(config: Config, settings: Optional[dict]):
         config.workholding = {}
     elif hold:
         kwargs["workholding"] = hold
+    if settings.get("fixtures") is not None:  # the whole list, as placed in the Setup tab; [] is none at all
+        kwargs["fixtures"] = fixture_specs(settings["fixtures"])
     return config, kwargs
 
 
@@ -124,6 +136,14 @@ class EmucraftServer(ThreadingHTTPServer):
             if candidate.is_file() and root in candidate.parents:
                 return candidate
         return None
+
+    def check_models(self, specs: List[FixtureSpec], config: Config) -> None:
+        """Browsers name models by path: only the ones the server already offers, never any file on it."""
+        roots = [fixture_dir()] + [folder.resolve() for _, folder in self.program_dirs()]
+        known = {f.model for f in config.fixtures}
+        for spec in specs:
+            if spec.model and spec.model not in known and not any(Path(spec.model).is_relative_to(r) for r in roots):
+                raise ValueError(f"fixture model {Path(spec.model).name} is not in the library")
 
     def config_for(self, path: Optional[Path]) -> Config:
         if self.config is not None:
@@ -171,11 +191,15 @@ class Handler(BaseHTTPRequestHandler):
     def _error(self, status: int, message: str) -> None:
         self._json(status, {"error": message})
 
-    def _body(self) -> dict:
+    def _raw(self) -> bytes:
         length = int(self.headers.get("Content-Length") or 0)
         if length > MAX_BODY:
+            self.close_connection = True  # the rest of it is still on the way
             raise ValueError("request too large")
-        raw = self.rfile.read(length) if length else b"{}"
+        return self.rfile.read(length)
+
+    def _body(self) -> dict:
+        raw = self._raw() or b"{}"
         if self.headers.get("Content-Encoding") == "gzip":
             raw = gzip.decompress(raw)
         data = json.loads(raw.decode("utf-8"))
@@ -200,6 +224,10 @@ class Handler(BaseHTTPRequestHandler):
                                  "vises": list(VISES)})
             elif path == "/api/programs":
                 self._json(200, self._list_programs())
+            elif path == "/api/fixtures":
+                self._json(200, {"models": list_models(), "setups": list_setups()})
+            elif path.startswith("/api/simulations/"):
+                self._send(200, load_simulation(path[len("/api/simulations/"):]), "application/json")
             elif path.startswith("/api/programs/"):
                 found = self.server.find_program(path[len("/api/programs/"):])
                 if not found:
@@ -210,25 +238,48 @@ class Handler(BaseHTTPRequestHandler):
                 self._error(404, "unknown endpoint")
             else:
                 self._static(path)
+        except FileNotFoundError:
+            self._error(404, "That simulation is gone: the oldest are removed as new ones are saved")
         except Exception as exc:  # pragma: no cover - defensive
             traceback.print_exc()
             self._error(500, str(exc))
 
     def do_POST(self) -> None:
-        path = urlparse(self.path).path
+        url = urlparse(self.path)
+        path = unquote(url.path)
+        folder, _, name = path.rpartition("/")
+        route = (self.command, folder if folder in ("/api/fixtures", "/api/setups") else path)
         try:
-            data = self._body()
-            if path == "/api/analyze":
-                self._json(200, self._analyze(data))
-            elif path == "/api/optimize":
-                self._json(200, self._optimize(data))
+            if route == ("POST", "/api/analyze"):
+                self._json(200, self._analyze(self._body()))
+            elif route == ("POST", "/api/optimize"):
+                self._json(200, self._optimize(self._body()))
+            elif route == ("PUT", "/api/fixtures"):
+                self._json(200, save_model(name, self._raw(), "replace=1" in url.query))
+            elif route == ("DELETE", "/api/fixtures"):
+                delete_model(name)
+                self._json(200, {})
+            elif route == ("PUT", "/api/setups"):
+                specs = fixture_specs(self._body().get("fixtures", []))
+                self.server.check_models(specs, self.server.config or Config())
+                self._json(200, save_setup(name, specs))
+            elif route == ("DELETE", "/api/setups"):
+                delete_setup(name)
+                self._json(200, {})
             else:
+                self._raw()  # what follows on this connection must be the next request
                 self._error(404, "unknown endpoint")
+        except FileExistsError as exc:
+            self._error(409, str(exc))
+        except FileNotFoundError as exc:
+            self._error(404, f"not found: {Path(exc.filename).name}" if exc.filename else str(exc))
         except (ValueError, ConfigError, KeyError, TypeError, KernelError) as exc:
             self._error(400, str(exc))
         except Exception as exc:  # pragma: no cover - defensive
             traceback.print_exc()
             self._error(500, f"{type(exc).__name__}: {exc}")
+
+    do_PUT = do_DELETE = do_POST
 
     def _list_programs(self) -> List[dict]:
         out = []
@@ -258,6 +309,9 @@ class Handler(BaseHTTPRequestHandler):
     def _source(self, data: dict) -> Tuple[str, str, Config]:
         name = str(data.get("name") or "program.nc")
         text = data.get("text")
+        if data.get("simulation"):  # opened from a link: the config it was checked with
+            doc = json.loads(load_simulation(str(data["simulation"])))
+            return name, text, config_from_dict(doc["config"], fixture_dir())
         path = self.server.find_program(name) if data.get("sample") else None
         if text is None:
             if path is None:
@@ -269,9 +323,15 @@ class Handler(BaseHTTPRequestHandler):
             config_path = self.server.find_program(str(data["configOf"]))
         return name, text, self.server.config_for(config_path)
 
+    def _settings(self, data: dict, config: Config):
+        """apply_settings, for what a browser sent."""
+        out, kwargs = apply_settings(config, data.get("settings"))
+        self.server.check_models(kwargs.get("fixtures", []), config)
+        return out, kwargs
+
     def _analyze(self, data: dict) -> dict:
         name, text, config = self._source(data)
-        config, kwargs = apply_settings(config, data.get("settings"))
+        config, kwargs = self._settings(data, config)
         t0 = time.perf_counter()
         result = check_text(text, name, config, **kwargs)
         payload = analysis_payload(result)
@@ -280,7 +340,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _optimize(self, data: dict) -> dict:
         name, text, config = self._source(data)
-        config, kwargs = apply_settings(config, data.get("settings"))
+        config, kwargs = self._settings(data, config)
         options = dict(config.optimize)
         options.update({k: v for k, v in (data.get("options") or {}).items() if v is not None and v != ""})
         spec = OptimizeSpec.from_dict(options)

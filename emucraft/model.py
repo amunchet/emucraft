@@ -12,6 +12,8 @@ Every resolved value remembers where it came from so reports can say so.
 from __future__ import annotations
 
 import math
+import os
+import secrets
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -30,6 +32,28 @@ TOOL_LENGTH_FIELDS = (
     "holder_diameter",
     "holder_length",
 )
+
+
+def data_dir() -> Path:
+    """The folder the viewer and the MCP server share: uploaded fixtures, setups and saved simulations."""
+    env = os.environ.get("EMUCRAFT_DATA")
+    if env:
+        return Path(env).resolve()
+    base = os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share"
+    return (Path(base) / "emucraft").resolve()
+
+
+def fixture_dir() -> Path:
+    """The fixture library: a config's model that is not next to it is looked for here."""
+    return data_dir() / "fixtures"
+
+
+def write_file(path: Path, data: bytes) -> None:
+    """Write a file in one step, so the viewer and the MCP server never see half of it."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_name(f"{path.name}.{secrets.token_hex(4)}.tmp")
+    temp.write_bytes(data)
+    os.replace(temp, path)
 
 
 def unit_factor(src: str, dst: str) -> float:
@@ -142,8 +166,10 @@ class FixtureSpec:
     """A vise, clamp or plate the tool must never touch: an STL model or a box.
 
     The model is scaled by ``scale`` (its lengths are in ``units``, default the
-    config's), turned ``rotate`` degrees about Z around the model origin, then
-    moved by ``offset`` (config units).
+    config's) and turned ``rotate`` degrees about X, then Y, then Z. ``at`` then
+    puts the center of its bounding box at that point; without it, ``offset``
+    moves the model's own origin, about which it turned. Both are in
+    ``position_units``, default the config's.
     """
 
     name: str = ""
@@ -151,8 +177,10 @@ class FixtureSpec:
     box: Optional[Tuple[Tuple[float, float, float], Tuple[float, float, float]]] = None
     units: Optional[str] = None
     scale: float = 1.0
-    rotate: float = 0.0
+    rotate: Tuple[float, float, float] = (0.0, 0.0, 0.0)
     offset: Tuple[float, float, float] = (0.0, 0.0, 0.0)
+    at: Optional[Tuple[float, float, float]] = None
+    position_units: Optional[str] = None
 
     @property
     def label(self) -> str:

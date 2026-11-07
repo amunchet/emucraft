@@ -15,9 +15,9 @@ const $ = id => document.getElementById(id);
 const EMBED = window.EMUCRAFT_EMBED || null;
 if (!EMBED) appSwitcher(document.querySelector('.brand'), 'emucraft');
 
-async function api(path, body) {
-  const resp = await fetch(path, body === undefined ? {} : {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+async function api(path, body, method = body === undefined ? 'GET' : 'POST') {
+  const resp = await fetch(path, method === 'GET' ? {} : {
+    method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
   });
   const data = await resp.json().catch(() => ({ error: `HTTP ${resp.status}` }));
   if (!resp.ok || data.error) throw new Error(data.error || `HTTP ${resp.status}`);
@@ -56,12 +56,15 @@ class App {
       this.onAnalysis(EMBED.payload, false, initial);
       return;
     }
-    const [info, programs] = await Promise.all([api('api/info'), api('api/programs')]);
+    const [info, programs, library] = await Promise.all([api('api/info'), api('api/programs'), api('api/fixtures')]);
     this.info = info;
+    this.library = library;
     const select = $('program-select');
     select.append(el('option', { value: '' }, programs.length ? 'Examples & programs…' : 'No programs found'));
     for (const p of programs) select.append(el('option', { value: p.name }, `${p.name}${p.source === 'examples' ? ' (example)' : ''}`));
-    const wanted = new URLSearchParams(location.search).get('program');
+    const query = new URLSearchParams(location.search);
+    if (query.has('sim')) { await this.loadSimulation(query.get('sim')); return; }
+    const wanted = query.get('program');
     const first = programs.find(p => p.name === wanted) || programs.find(p => p.name === 'crash_demo.nc');
     if (first) {
       select.value = first.name;
@@ -82,6 +85,22 @@ class App {
       return;
     }
     await this.analyze({ name, text, sample: true }, false, {});
+  }
+
+  // A check saved by the MCP server: shown just as it ran, and re-checked with the config it ran with.
+  async loadSimulation(id) {
+    this.setBadge('busy', 'Loading…');
+    try {
+      const { name, text, settings, payload } = await api(`api/simulations/${encodeURIComponent(id)}`);
+      const initial = payload.initial_heights_gz ? await inflateTyped(payload.initial_heights_gz, Float32Array) : null;
+      this.source = { name, text, simulation: id };
+      this.settings = settings;
+      this.holdBase = payload.report.workholding;
+      this.onAnalysis(payload, false, initial);
+    } catch (err) {
+      this.setBadge('fail', 'Error');
+      this.toast(err.message);
+    }
   }
 
   async loadFile(file) {
@@ -127,7 +146,7 @@ class App {
 
   // Fixture meshes as they were checked; they inflate after the rest of the scene is up.
   async loadFixtures(payload) {
-    for (const f of payload.fixtures || []) {
+    for (const [index, f] of (payload.fixtures || []).entries()) {
       const tris = await inflateTyped(f.triangles_gz, Float32Array);
       if (this.payload !== payload) return; // a newer analysis replaced this one
       const geometry = new THREE.BufferGeometry();
@@ -136,6 +155,7 @@ class App {
       const material = new THREE.MeshStandardMaterial({ color: 0x8a96a6, metalness: 0.3, roughness: 0.6, side: THREE.DoubleSide });
       const mesh = new THREE.Mesh(geometry, material);
       mesh.name = f.name;
+      mesh.userData.index = index;
       this.fixtures.add(mesh);
       this.viewer.dirty = true;
     }
@@ -229,11 +249,16 @@ class App {
     this.fixtures.visible = $('show-fixtures').checked;
     world.add(this.fixtures);
     $('show-fixtures').parentElement.hidden = !payload.fixtures?.length;
+    $('move-fixtures').parentElement.hidden = !payload.fixtures?.length || !!EMBED;
     this.loadFixtures(payload);
     this.buildMarkers();
 
-    this.viewer.setHelpers(bounds, r.machine.table_z);
-    if (!keepView) this.viewer.frame(bounds, 'iso');
+    // the view takes in the fixtures too, so one placed far from the part can be found
+    const scene = bounds.clone();
+    for (const f of r.fixtures) { scene.expandByPoint(new THREE.Vector3(...f.bounds[0])); scene.expandByPoint(new THREE.Vector3(...f.bounds[1])); }
+    this.viewer.setHelpers(scene, r.machine.table_z);
+    if (!keepView) this.viewer.frame(scene, 'iso');
+    this.viewer.bounds = scene;
 
     const marks = new Map();
     for (const issue of r.issues) {
@@ -335,20 +360,107 @@ class App {
     renderSetup($('tab-setup'), r, {
       units: this.units, readOnly: !!EMBED, settings: this.settings, holdBase: this.holdBase,
       materials: this.info?.workholding_materials, holdDefaults: this.info?.workholding_defaults, vises: this.info?.vises,
-      onApply: changes => {
-        let next = {};
-        if (changes) {
-          next = { ...this.settings, ...changes, tools: { ...(this.settings.tools || {}) } };
-          for (const [t, values] of Object.entries(changes.tools || {})) next.tools[t] = { ...(next.tools[t] || {}), ...values };
-          if (changes.workholding && changes.workholding.fixture !== 'off') {
-            next.workholding = { ...(this.settings.workholding || {}), ...changes.workholding };
-          }
-        }
-        this.analyze(this.source, true, next);
-      },
+      library: this.library,
+      onApply: changes => this.applySetup(changes),
+      onUpload: file => this.uploadFixture(file),
+      onSaveSetup: (name, fixtures, changes) => this.saveSetup(name, fixtures, changes),
+      onDelete: (kind, name) => this.deleteFromLibrary(kind, name),
     });
     this.renderOptimize();
     renderStats($('tab-stats'), r, { display: this.payload.display, replay: this.replay });
+  }
+
+  applySetup(changes) {
+    let next = {};
+    if (changes) {
+      next = { ...this.settings, ...changes, tools: { ...(this.settings.tools || {}) } };
+      for (const [t, values] of Object.entries(changes.tools || {})) next.tools[t] = { ...(next.tools[t] || {}), ...values };
+      if (changes.workholding && changes.workholding.fixture !== 'off') {
+        next.workholding = { ...(this.settings.workholding || {}), ...changes.workholding };
+      }
+    }
+    this.analyze(this.source, true, next);
+  }
+
+  // ------------------------------------------------------------ fixture library
+
+  // Keeps an STL in the library and returns its record; a name already there needs a yes.
+  async uploadFixture(file) {
+    const put = replace => fetch(`api/fixtures/${encodeURIComponent(file.name)}${replace ? '?replace=1' : ''}`, { method: 'PUT', body: file });
+    try {
+      let resp = await put(false);
+      if (resp.status === 409) {
+        if (!confirm(`${file.name} is already in the library, and setups may use it. Replace it?`)) return null;
+        resp = await put(true);
+      }
+      const model = await resp.json();
+      if (!resp.ok) throw new Error(model.error);
+      this.library = await api('api/fixtures');
+      return model;
+    } catch (err) {
+      this.toast(err.message);
+      return null;
+    }
+  }
+
+  async saveSetup(name, fixtures, changes) {
+    try {
+      const saved = await api(`api/setups/${encodeURIComponent(name)}`, { fixtures }, 'PUT');
+      this.library = await api('api/fixtures');
+      this.toast(`Saved setup ${saved.name}`);
+      this.applySetup({ ...changes, fixtures });  // what is on screen is what was saved
+    } catch (err) {
+      this.toast(err.message);
+    }
+  }
+
+  async deleteFromLibrary(kind, name) {
+    try {
+      await api(`api/${kind}/${encodeURIComponent(name)}`, undefined, 'DELETE');
+      this.library = await api('api/fixtures');
+      this.renderPanels();
+    } catch (err) {
+      this.toast(err.message);
+    }
+  }
+
+  // ------------------------------------------------------------ moving fixtures
+
+  // With Move on, a press on a fixture picks it up: across the table, or with Shift up and down. Views from
+  // the side have no table to drag on, so they move it in their own plane.
+  grabFixture(e) {
+    if (!$('move-fixtures').checked || !this.fixtures?.visible) return;
+    const hit = this.viewer.ray(e.clientX, e.clientY).intersectObjects(this.fixtures.children, false)[0];
+    if (!hit) return;
+    const dir = this.viewer.camera.getWorldDirection(new THREE.Vector3());
+    const normal = Math.abs(dir.z) > 0.3 && !e.shiftKey ? new THREE.Vector3(0, 0, 1) : dir.setZ(0).normalize();
+    this.drag = { mesh: hit.object, from: hit.point, upOnly: e.shiftKey, plane: new THREE.Plane().setFromNormalAndCoplanarPoint(normal, hit.point) };
+    this.viewer.controls.enabled = false;
+    $('canvas').setPointerCapture(e.pointerId);
+  }
+
+  dragFixture(e) {
+    const point = this.drag && this.viewer.ray(e.clientX, e.clientY).ray.intersectPlane(this.drag.plane, new THREE.Vector3());
+    if (!point) return;
+    const move = point.sub(this.drag.from);
+    if (this.drag.upOnly) move.x = move.y = 0;
+    this.drag.mesh.position.copy(move);
+    this.viewer.dirty = true;
+  }
+
+  // Dropping a fixture writes its new center into the Setup form and re-checks.
+  dropFixture() {
+    const { mesh } = this.drag;
+    this.drag = null;
+    this.viewer.controls.enabled = true;
+    if (!mesh.position.lengthSq()) return;
+    const card = document.querySelectorAll('#tab-setup .fixture-card')[mesh.userData.index];
+    const step = this.units === 'mm' ? 100 : 1000;
+    ['x', 'y', 'z'].forEach((axis, i) => {
+      const input = card.querySelector(`[name="at.${i}"]`);
+      input.value = Math.round((Number(input.value) + mesh.position[axis]) * step) / step;
+    });
+    card.closest('form').requestSubmit();
   }
 
   renderOptimize(busy = false) {
@@ -366,7 +478,7 @@ class App {
         const { text, name } = this.optimized;
         // same setup as the original: its config file and the current settings
         const configOf = this.source.sample ? this.source.name : this.source.configOf;
-        this.analyze({ name, text, sample: false, configOf }, true);
+        this.analyze({ name, text, sample: false, configOf, simulation: this.source.simulation }, true);
       },
     });
   }
@@ -683,6 +795,7 @@ class App {
     $('show-rapids').addEventListener('change', e => { this.toolpath?.setShowRapids(e.target.checked); this.viewer.dirty = true; });
     $('show-tool').addEventListener('change', e => { if (this.toolGroup) this.toolGroup.visible = e.target.checked; this.viewer.dirty = true; });
     $('show-fixtures').addEventListener('change', e => { if (this.fixtures) this.fixtures.visible = e.target.checked; this.viewer.dirty = true; });
+    $('move-fixtures').addEventListener('change', e => document.body.classList.toggle('moving', e.target.checked));
     $('stock-color').addEventListener('change', e => { this.stockMode = e.target.value; this.stock?.setMode(this.stockMode); this.viewer.dirty = true; });
     $('path-color').addEventListener('change', e => this.setPathMode(e.target.value));
     $('speed').addEventListener('change', e => { this.speed = Number(e.target.value); });
@@ -694,9 +807,12 @@ class App {
 
     const canvas = $('canvas');
     let down = null;
+    canvas.addEventListener('pointerdown', e => this.grabFixture(e), { capture: true });  // before OrbitControls sees it
+    canvas.addEventListener('pointermove', e => this.dragFixture(e));
     canvas.addEventListener('pointerdown', e => { down = [e.clientX, e.clientY]; });
     canvas.addEventListener('pointerup', e => {
-      if (down && Math.hypot(e.clientX - down[0], e.clientY - down[1]) < 4) this.pickAt(e.clientX, e.clientY);
+      if (this.drag) this.dropFixture();
+      else if (down && Math.hypot(e.clientX - down[0], e.clientY - down[1]) < 4) this.pickAt(e.clientX, e.clientY);
       down = null;
     });
 

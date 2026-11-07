@@ -76,8 +76,9 @@ flowchart LR
   `IF` blocks are skipped with a warning, never executed as moves. Tool and
   stock data are read from CAM header comments (`DIAMETER:`,
   `Tool Holder Diameter:`, `MIN X:` ...), from `#127`/`#128` holder and
-  stick-out variables, and from your config file. Anything it cannot
-  simulate faithfully becomes a message instead of a silent guess.
+  stick-out variables, and from your config file. A `(FIXTURE: name)` comment
+  picks a saved fixture setup. Anything it cannot simulate faithfully becomes
+  a message instead of a silent guess.
 - **Kernel** (`kernel/src/emucraft.c`) models the stock as a height field and
   sweeps each move analytically. For every cell under a move it finds the
   lowest point of the moving tool surface (flat, ball, bull nose or
@@ -374,23 +375,57 @@ where each value came from. Holder checks need both `holder_diameter` and
 
 ### Fixtures
 
-A vise, clamp or subplate is a second block that must stay whole. Give it as
-an STL model (binary or ASCII) or a box, placed into program coordinates:
+A vise, clamp or subplate is a second block that must stay whole. It is an STL
+model (binary or ASCII) or a box, placed into program coordinates.
+
+**Which fixtures does a program use?** G-code does not say: `G54` names an
+origin, not the hardware around it, and CAM systems leave their fixtures out of
+what they post. So it is your call, and each check uses the first of these it
+finds (the report's `fixture_source` says which):
+
+1. Fixtures set for that check: placed in the viewer's Setup tab, or passed to
+   the MCP server's `check_program`.
+2. The saved setup a comment in the program names, as in `(FIXTURE: kurt-6in)`,
+   however it is capitalized. Another wording is a `comment_rules` entry away:
+   give the pattern `field = "program.fixture"`, say for `(VISE: kurt-6in)`. If
+   that setup is not saved, the check warns: it did not see the fixture.
+3. The saved setup named after the program: `bracket.nc` uses `bracket`.
+4. `[[fixtures]]` in the config (for the MCP server, its saved settings).
+
+**In the viewer**, the Setup tab has a card for each fixture. *Upload STL…* keeps
+a model in the shared library and adds it under the stock; an STL does not say
+what its units are, so the card starts with the reading closest in size to the
+part and shows what the fixture spans, and *Model units* and *Scale* put it
+right. Type its center and turn, or switch on *Move* above the view and drag it:
+across the table, up and down with Shift, or in the view's plane from Front and
+Right. Each drop re-checks. *Save setup* keeps the placement under a name; leave
+it as the program's name to have it back next time. The library holds models and
+setups in `$EMUCRAFT_DATA` (default `~/.local/share/emucraft`), which `emucraft
+serve`, `emucraft mcp` and `emucraft check` share.
+
+**In a config file**, fixtures look the same (see
+[`examples/vise/`](examples/vise) for one in use):
 
 ```toml
 [[fixtures]]
 name = "Kurt vise"
-model = "kurt.stl"             # relative to this file
+model = "kurt.stl"             # next to this file, or a model in the library
 units = "mm"                   # units of the model (default: this file's units)
 scale = 10                     # e.g. a model drawn in centimeters
-rotate = 0                     # degrees about Z, around the model's origin
-offset = [89.974, -28.049, -2.842]   # then moved by this, in this file's units
+rotate = [90, 0, 0]            # degrees about X, then Y, then Z; a number turns about Z
+at = [2.6, 1.5, -2.5]          # where the center of the model goes
+# position_units = "inch"      # units of at (default: this file's units)
+# offset = [89.974, -28.049, -2.842]   # instead of at: where the model's own origin goes
 
 [[fixtures]]                   # a box is placed the same way
 name = "toe clamp"
 min = [-1.5, 1.0, -0.6]
 max = [-0.5, 2.0, 0.1]
 ```
+
+`at` is the easy one to use: a CAD model's origin can be anywhere, but its center
+is where it looks to be, and `rotate` then turns it where it stands. With `offset`
+the model turns about its own origin instead.
 
 The fixture is seen from +Z as a height field, like the stock, and every move
 runs over it through the same kernel with the same tools, as a move that must
@@ -477,9 +512,12 @@ pip install -e ".[mcp]"
 
 | Tool | What it does |
 |---|---|
-| `check_program` | Full collision check. Returns status, issues with lines and depths, interpreter messages, and the tool geometry with where each value came from. Takes `stock`, per-tool `tools` overrides, `resolution`, `workholding` options (see [Workholding](#workholding)) and `fixtures` for that call (see [Fixtures](#fixtures)) |
-| `program_info` | What was read from comments and macro variables, with each value's line and text, without simulating. Pass a few comment lines as `gcode` to try detection settings |
+| `check_program` | Full collision check. Returns status, issues with lines and depths, interpreter messages, the tool geometry with where each value came from, and `simulation.url`, a link to watch this check in the 3D viewer. Takes `stock`, per-tool `tools` overrides, `resolution`, `workholding` options (see [Workholding](#workholding)), `fixtures` or a saved `fixture_setup` for that call (see [Fixtures](#fixtures)), and a `name` for inline `gcode` |
+| `program_info` | What was read from comments and macro variables, with each value's line and text, and which fixtures a check would use, without simulating. Pass a few comment lines as `gcode` to try detection settings |
 | `list_programs` | The programs in the `--programs` folder, as `path` values for the other tools |
+| `list_fixtures` | The uploaded models with their sizes, and the saved setups with their placements |
+| `upload_fixture` / `delete_fixture` | Keep an STL (base64) in the fixture library, or remove it |
+| `save_fixture_setup` / `delete_fixture_setup` | Keep fixtures as placed under a name, or remove them |
 | `get_settings` / `update_settings` / `reset_settings` | View and change the server's saved settings, mainly comment detection (`comment_aliases`, `comment_rules`, `variable_rules`, `check.fuzz_threshold`) and tool defaults |
 
 Programs are passed as a file `path` or inline `gcode`. Each call uses the
@@ -489,29 +527,57 @@ config at `~/.config/emucraft/mcp.json` (override with
 `EMUCRAFT_MCP_CONFIG`), so `emucraft check -c` can use them too. Every
 result names the config it used.
 
+To place a fixture, upload it, read its size from the result, and pass it to
+`check_program`; each fixture in the report has a `spec` to pass back with a new
+`at`, and bounds to see where it landed:
+
+```python
+upload_fixture(name="kurt-dx6.stl", data="<base64>")   # bounds [[0, 0, 0], [395, 152, 180]]
+check_program(path="bracket.nc", fixtures=[
+    {"model": "kurt-dx6.stl", "units": "mm", "at": [2.6, 1.5, -3.6], "rotate": 90}])
+save_fixture_setup(name="bracket", fixtures=[...])     # from now on, bracket.nc needs no fixtures argument
+```
+
+A model too big for a tool call goes up as the file itself, with the same token:
+`curl -T kurt-dx6.stl -H "Authorization: Bearer $TOKEN"
+https://<host>/fixtures/kurt-dx6.stl` (`?replace=1` to overwrite). The viewer's
+Setup tab uses the same library: a model uploaded or a setup saved in one shows
+up in the other.
+
+**Simulation links.** Each `check_program` saves what it did, and
+`simulation.url` opens exactly that in the viewer, stock, fixtures, tools and
+issues included, to play back or scrub through. *Re-check* from there uses the
+config the check ran with, so someone can drag a fixture clear, save the setup,
+and have the next check find it. The address comes from `EMUCRAFT_URL`, the
+viewer's public address. A server on stdio assumes `emucraft serve` on this
+machine (`http://127.0.0.1:8765`); over HTTP without it the `url` is `null`,
+as there is no telling where the viewer is. The server and the viewer must share
+`$EMUCRAFT_DATA`, and old simulations are removed once they pass 2 GB in all.
+
 ```sh
 emucraft mcp --http --host 0.0.0.0 --port 8000 --programs /programs  # streamable HTTP at /mcp, GET /health
 ```
 
 With `--programs`, `path` and `config_path` are relative to that folder and
 cannot leave it. Over HTTP without it, only inline `gcode` is accepted, so a
-caller cannot read the server's files, and fixture models have to be in the
-programs folder (a relative `model` saved with `update_settings` is relative to
-it). With `EMUCRAFT_TOKEN` set, `/mcp`
-needs `Authorization: Bearer <token>`. Deployed, this is the `emucraft-mcp`
-service (see [Web Deployment](#web-deployment)).
+caller cannot read the server's files. Either way, fixture models have to be in
+the library or the programs folder (a relative `model` saved with
+`update_settings` is relative to that folder, then the library). With
+`EMUCRAFT_TOKEN` set, `/mcp` and `/fixtures` need
+`Authorization: Bearer <token>`. Deployed, this is the `emucraft-mcp` service
+(see [Web Deployment](#web-deployment)).
 
 ## Web Deployment
 Each web app has its own Docker image, and none has authentication of its own - they are meant to sit behind a reverse proxy (Caddy) that handles that:
 
 | Service | Image, built from | Serves |
 |---|---|---|
-| `emucraft` | `Dockerfile` | the G-code viewer (`emucraft serve`) on port 8000 |
+| `emucraft` | `Dockerfile` | the G-code viewer (`emucraft serve`) on port 8000; fixture models, setups and simulations in the `emucraft-store` volume |
 | `moonshot` | `moonshot/Dockerfile` (repository root as context) | Moonshot's web page (`moonshot-web`) on port 8000, models and runs in the `moonshot-web` volume |
 | `laser` | `laser/Dockerfile` | the laser engraving simulator, a static build served by nginx on port 80 |
 | `laser-api` | `laser/Dockerfile.api` | the laser customer GLB API (`laser/server.mjs`) on port 8001; call it from the shop's backend, see [Customer GLB API](#customer-glb-api-laserservermjs) |
 | `moonshot-mcp` | the `moonshot` image | Moonshot's MCP server on port 8000 (`/mcp`), its own `moonshot-mcp` volume |
-| `emucraft-mcp` | the `emucraft` image | emucraft's MCP server (`emucraft mcp --http`) on port 8000, settings in the `emucraft-mcp` volume, programs from `/programs` |
+| `emucraft-mcp` | the `emucraft` image | emucraft's MCP server (`emucraft mcp --http`) on port 8000, settings in the `emucraft-mcp` volume, programs from `/programs`, and the viewer's `emucraft-store` volume, so its simulation links open there (set `EMUCRAFT_URL` to the viewer's public address) |
 | `laser-mcp` | the `laser-api` image | the laser MCP server (`laser/mcp.mjs`) on port 8000, templates in the `laser-templates` volume; see [Laser MCP server](#laser-mcp-server-lasermcpmjs) |
 
 `docker-compose.yml` starts all seven. The four apps are in `docker-compose.apps.yml`, which it includes, for running them without the MCP servers. Both join an **external** Docker network (`emucraft` by default, override with `EMUCRAFT_NETWORK`) and publish no ports:
@@ -549,6 +615,8 @@ The production config is in [`Caddyfile`](Caddyfile), kept for reference. It add
 `handle_path` strips the prefix, so each app still sees itself at `/`. The pages use only relative URLs, so they work under any prefix, but they need the trailing slash, which is why each path has a `redir`. Clicking an app's name in its top bar switches to the others at `/emucraft/`, `/moonshot/` and `/laser-simulator/`. These paths are fixed in `APPS` in `emucraft/web/js/util.js` and its copy in `laser/src/main.js`. Anywhere else, such as running locally, it links to each app's default port on the same host instead (8765, 8766, and the laser simulator's dev server on 5173). Moonshot's MCP server checks `MOONSHOT_TOKEN` itself (set `MOONSHOT_URL` to its public address for download links); see [moonshot/README.md](moonshot/README.md#mcp-server).
 
 The viewer lists the bundled `examples/` plus anything in `/programs` inside the container; uncomment the volume in `docker-compose.yml` to mount your own folder (an `emucraft.toml` there is picked up as the default config).
+
+The viewer's `PUT` and `DELETE` routes change the shared fixture library, and it has no authentication of its own, so leave them behind the proxy: the production Caddyfile asks for the write permission on them, and viewing a simulation link only takes read.
 
 ## Laser engraving simulator (`laser/`)
 A separate, browser-based section of Emucraft that simulates laser engraving a bitmap into a solid and renders the result with three.js for customer-facing previews.

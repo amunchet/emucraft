@@ -1,7 +1,11 @@
 """MCP server tools, called through an in-process MCP client."""
 
 import asyncio
+import base64
 import json
+import struct
+import threading
+import urllib.request
 
 import pytest
 
@@ -10,6 +14,8 @@ pytest.importorskip("mcp")
 from mcp import Client  # noqa: E402
 
 from emucraft import mcp_server  # noqa: E402
+from emucraft.fixture import _box  # noqa: E402
+from emucraft.server import make_server  # noqa: E402
 from helpers import EXAMPLES  # noqa: E402
 
 
@@ -204,3 +210,157 @@ def test_call_fixtures_take_their_units_like_the_configs_own(settings_file):
     assert call("check_program", gcode=mm, fixtures=[box])["fixtures"][0]["bounds"][1][0] == pytest.approx(25.4)
     explicit = {**box, "units": "mm"}
     assert call("check_program", gcode=mm, fixtures=[explicit])["fixtures"][0]["bounds"][1][0] == pytest.approx(1)
+
+
+def stl(lo=(0, 0, 0), hi=(1, 1, 1)):
+    tris = _box(lo, hi)
+    out = b" " * 80 + struct.pack("<I", len(tris) // 9)
+    for i in range(0, len(tris), 9):
+        out += b"\0" * 12 + struct.pack("<9f", *tris[i:i + 9]) + b"\0\0"
+    return out
+
+
+CUT = HEADER + "G0 X1\nG1 Z0.5 F20\nG0 Z2\nM30\n"
+BLOCK = {"name": "block", "model": "block.stl", "at": [1, 1, 0.5], "units": "inch", "position_units": "inch"}
+
+
+def upload(name="block.stl", **sizes):
+    return call("upload_fixture", name=name, data=base64.b64encode(stl(**sizes)).decode())
+
+
+def test_upload_place_and_move_a_fixture(served):
+    served()  # a remote server with no programs folder: the library is the only way in for a model
+    model = upload(hi=(1, 1, 1))
+    assert model["name"] == "block.stl" and model["bounds"] == [[0, 0, 0], [1, 1, 1]]
+    assert call("list_fixtures")["models"][0]["name"] == "block.stl"
+    report = call("check_program", gcode=CUT, fixtures=[BLOCK])
+    assert [i["kind"] for i in report["issues"]] == ["fixture"]
+    (fx,) = report["fixtures"]
+    assert fx["bounds"] == [[0.5, 0.5, 0], [1.5, 1.5, 1]]
+    moved = {**fx["spec"], "at": [8, 8, 0.5], "rotate": 45}
+    assert call("check_program", gcode=CUT, fixtures=[moved])["issues"] == []
+
+
+def test_upload_fixture_refuses_bad_files(served):
+    served()
+    with pytest.raises(RuntimeError, match="not an STL"):
+        call("upload_fixture", name="x", data=base64.b64encode(b"nope").decode())
+    with pytest.raises(RuntimeError):
+        call("upload_fixture", name="x", data="!!! not base64 !!!")
+    upload()
+    with pytest.raises(RuntimeError, match="already in the library"):
+        upload()
+    assert call("upload_fixture", name="block", data=base64.b64encode(stl(hi=(2, 2, 2))).decode(),
+                replace=True)["bounds"][1] == [2, 2, 2]
+    assert call("delete_fixture", name="block.stl") == {"deleted": "block.stl"}
+    with pytest.raises(RuntimeError, match="No fixture model"):
+        call("delete_fixture", name="block.stl")
+
+
+def test_a_library_model_is_not_a_way_out_of_the_guard(served, tmp_path):
+    served()
+    (tmp_path / "secret.stl").write_bytes(stl())
+    with pytest.raises(RuntimeError, match="outside the programs folder"):
+        call("check_program", gcode=CUT, fixtures=[{"model": str(tmp_path / "secret.stl")}])
+    with pytest.raises(RuntimeError, match="outside the programs folder"):
+        call("save_fixture_setup", name="x", fixtures=[{"model": str(tmp_path / "secret.stl")}])
+
+
+def test_saved_setups_from_the_call_the_name_and_the_comment(served):
+    served()
+    upload()
+    saved = call("save_fixture_setup", name="Kurt 6in", fixtures=[BLOCK])
+    assert saved["name"] == "kurt-6in"
+    assert call("list_fixtures")["setups"][0]["fixtures"][0]["model"] == "block.stl"
+    by_call = call("check_program", gcode=CUT, fixture_setup="kurt-6in")
+    assert [i["kind"] for i in by_call["issues"]] == ["fixture"] and by_call["fixture_source"] == "this check"
+    by_comment = call("check_program", gcode="(FIXTURE: KURT 6IN)\n" + CUT)
+    assert by_comment["fixture_source"] == "setup kurt-6in (program line 1)"
+    call("save_fixture_setup", name="bracket", fixtures=[BLOCK])
+    assert call("check_program", gcode=CUT, name="bracket.nc")["fixture_source"].startswith("setup bracket")
+    assert call("check_program", gcode=CUT)["fixtures"] == []
+    with pytest.raises(RuntimeError, match="No fixture setup"):
+        call("check_program", gcode=CUT, fixture_setup="nope")
+    with pytest.raises(RuntimeError, match="not both"):
+        call("check_program", gcode=CUT, fixture_setup="kurt-6in", fixtures=[])
+    assert call("delete_fixture_setup", name="kurt-6in") == {"deleted": "kurt-6in"}
+
+
+def test_program_info_says_what_a_check_would_use(served):
+    served()
+    upload()
+    call("save_fixture_setup", name="kurt", fixtures=[BLOCK])
+    info = call("program_info", gcode="(FIXTURE: kurt)\n" + HEADER + "M30\n")
+    assert info["fixtures"] == ["block"] and info["fixture_source"] == "setup kurt (program line 1)"
+    assert {"target": "program.fixture", "value": "kurt", "line": 1, "text": "(FIXTURE: kurt)"} in info["detections"]
+    missing = call("program_info", gcode="(FIXTURE: other)\n" + HEADER + "M30\n")
+    assert missing["fixtures"] == [] and "other is not saved" in missing["messages"][-1]["text"]
+
+
+def test_saved_settings_take_library_models_too(served, settings_file):
+    served(EXAMPLES)
+    upload()
+    call("update_settings", changes={"fixtures": [BLOCK]})
+    assert call("check_program", gcode=CUT)["fixtures"][0]["name"] == "block"
+
+
+def test_every_check_links_to_its_simulation(monkeypatch):
+    report = call("check_program", gcode=CUT, name="bracket.nc")
+    assert report["simulation"]["url"] == f"http://127.0.0.1:8765/?sim={report['simulation']['id']}"
+    monkeypatch.setenv("EMUCRAFT_URL", "https://emu.example.com/emucraft/")
+    report = call("check_program", gcode=CUT)
+    assert report["simulation"]["url"] == f"https://emu.example.com/emucraft/?sim={report['simulation']['id']}"
+
+
+def test_a_remote_server_never_guesses_the_viewers_address(served):
+    served()
+    assert call("check_program", gcode=CUT)["simulation"]["url"] is None
+
+
+def test_the_link_opens_the_check_with_its_fixtures_in_the_viewer(served):
+    """The whole trip: MCP checks with an uploaded fixture, the web viewer shows it from the shared folder."""
+    served()
+    upload()
+    report = call("check_program", gcode=CUT, name="bracket.nc", fixtures=[BLOCK], stock=[0, 0, 0, 2, 2, 1],
+                  tools={"T1": {"holder_diameter": 1, "stickout": 1}})
+    web = make_server("127.0.0.1", 0)
+    threading.Thread(target=web.serve_forever, daemon=True).start()
+    try:
+        url = f"http://127.0.0.1:{web.server_address[1]}"
+        with urllib.request.urlopen(f"{url}/api/simulations/{report['simulation']['id']}") as resp:
+            sim = json.loads(resp.read())
+        assert sim["name"] == "bracket.nc" and sim["text"] == CUT
+        shown = sim["payload"]["report"]
+        assert shown["issues"] == report["issues"] and shown["fixtures"] == report["fixtures"]
+        assert sim["payload"]["fixtures"][0]["name"] == "block" and sim["payload"]["path"]["n"]
+        body = json.dumps({"name": sim["name"], "text": sim["text"], "simulation": report["simulation"]["id"],
+                           "settings": sim["settings"]}).encode()
+        req = urllib.request.Request(f"{url}/api/analyze", data=body, headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req) as resp:
+            again = json.loads(resp.read())["report"]
+        assert again["issues"] == shown["issues"] and again["tools"]["1"]["holder_diameter"] == 1
+        assert again["stock"]["xmax"] == 2 and again["fixtures"][0]["bounds"] == shown["fixtures"][0]["bounds"]
+    finally:
+        web.shutdown()
+        web.server_close()
+
+
+def http_client(token=None, monkeypatch=None):
+    from starlette.testclient import TestClient
+
+    if token:
+        monkeypatch.setenv("EMUCRAFT_TOKEN", token)
+    return TestClient(mcp_server.guarded(mcp_server.server.streamable_http_app(host="testserver")))
+
+
+def test_big_models_go_up_as_raw_files(monkeypatch):
+    client = http_client("secret", monkeypatch)
+    assert client.put("/fixtures/big.stl", content=stl()).status_code == 401
+    bearer = {"Authorization": "Bearer secret"}
+    response = client.put("/fixtures/big.stl", content=stl(), headers=bearer)
+    assert response.status_code == 200 and response.json()["name"] == "big.stl"
+    assert client.put("/fixtures/big.stl", content=stl(), headers=bearer).status_code == 409
+    assert client.put("/fixtures/big.stl?replace=1", content=stl(), headers=bearer).status_code == 200
+    assert client.put("/fixtures/junk.stl", content=b"nope", headers=bearer).status_code == 400
+    assert client.get("/fixtures/big.stl", headers=bearer).status_code == 405  # up only
+    assert client.get("/health").status_code == 200

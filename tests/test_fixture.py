@@ -4,12 +4,23 @@ import base64
 import gzip
 import struct
 from array import array
+from pathlib import Path
 
 import pytest
 
 from emucraft.check import check_file, check_text
-from emucraft.config import ConfigError, config_from_dict, load_config
-from emucraft.fixture import _box, place_fixtures, read_stl
+from emucraft.config import ConfigError, config_from_dict, config_to_dict, load_config
+from emucraft.fixture import (
+    _box,
+    clean_name,
+    delete_model,
+    fixture_specs,
+    list_models,
+    place_fixtures,
+    read_stl,
+    save_model,
+    save_setup,
+)
 from emucraft.kernel import Sim
 from emucraft.payload import analysis_payload
 from helpers import EXAMPLES
@@ -171,3 +182,188 @@ def test_payload_carries_the_fixture_mesh(vise):
     (fx,) = analysis_payload(vise)["fixtures"]
     tris = array("f", gzip.decompress(base64.b64decode(fx["triangles_gz"])))
     assert fx["name"] == "Kurt vise" and tris == vise.fixtures[0].triangles
+
+
+def placed(entry, units="inch", config=None):
+    (fx,) = place_fixtures(config or config_from_dict({"fixtures": [entry]}), units)
+    return fx
+
+
+def test_at_puts_the_center_there_however_far_the_models_origin_is():
+    entry = {"min": [500, 100, 300], "max": [540, 120, 380], "units": "mm", "at": [2, 3, -1]}
+    fx = placed(entry)
+    assert [(a + b) / 2 for a, b in zip(*fx.bounds)] == pytest.approx([2, 3, -1], abs=1e-4)
+    assert fx.spec.position_units == "inch" and fx.spec.at == (2, 3, -1)
+    # a turn keeps the center: a long part just swaps its X and Y sizes
+    lo, hi = placed({**entry, "rotate": 90}).bounds
+    assert [(a + b) / 2 for a, b in zip(lo, hi)] == pytest.approx([2, 3, -1], abs=1e-4)
+    assert hi[0] - lo[0] == pytest.approx(20 / 25.4, abs=1e-4) and hi[1] - lo[1] == pytest.approx(40 / 25.4, abs=1e-4)
+
+
+def test_turning_about_x_stands_a_y_up_model_up():
+    # a 1 x 3 x 2 block: a quarter turn about X takes its Y height to Z
+    lo, hi = placed({"min": [0, 0, 0], "max": [1, 3, 2], "rotate": [90, 0, 0], "at": [0, 0, 0]}).bounds
+    assert [b - a for a, b in zip(lo, hi)] == pytest.approx([1, 2, 3], abs=1e-5)
+
+
+def test_rotations_apply_about_x_then_y_then_z():
+    # (x, y, z) -> (z, y, -x) about Y, then -> (-y, z, -x) about Z; the other order would keep Z above 0
+    fx = placed({"min": [0, 0, 0], "max": [1, 0.1, 0.1], "rotate": [0, 90, 90]})
+    assert min(fx.triangles[2::3]) == pytest.approx(-1, abs=1e-5)
+    assert min(fx.triangles[0::3]) == pytest.approx(-0.1, abs=1e-5)
+
+
+def test_position_units_differ_from_the_models():
+    fx = placed({"min": [0, 0, 0], "max": [25.4, 25.4, 25.4], "units": "mm", "at": [50.8, 0, 0], "position_units": "mm"})
+    assert fx.bounds[1][0] == pytest.approx(2.5, abs=1e-5)
+
+
+def test_placed_spec_rebuilds_the_same_fixture_in_any_units():
+    """The viewer sends a fixture back as the report gave it, and setups keep it for later programs."""
+    for units in ("inch", "mm"):
+        cfg = load_config(EXAMPLES / "vise" / "emucraft.toml")
+        (fx,) = place_fixtures(cfg, units)
+        spec = fx.to_dict()["spec"]
+        assert "offset" not in spec and spec["position_units"] == units and spec["units"] == "mm"
+        (again,) = place_fixtures(cfg, units, fixture_specs([spec]))
+        assert again.bounds[0] == pytest.approx(fx.bounds[0], abs=1e-3)
+        assert again.bounds[1] == pytest.approx(fx.bounds[1], abs=1e-3)
+        (other,) = place_fixtures(cfg, "mm" if units == "inch" else "inch", fixture_specs([spec]))
+        k = 25.4 if units == "inch" else 1 / 25.4
+        assert [v / k for v in other.bounds[1]] == pytest.approx(fx.bounds[1], abs=1e-3)
+
+
+def write_stl(path, lo, hi):
+    tris = _box(lo, hi)
+    with open(path, "wb") as f:
+        f.write(b" " * 80 + struct.pack("<I", len(tris) // 9))
+        for i in range(0, len(tris), 9):
+            f.write(b"\0" * 12 + struct.pack("<9f", *tris[i:i + 9]) + b"\0\0")
+    return path.read_bytes()
+
+
+def test_library_keeps_models_under_clean_names(tmp_path):
+    data = write_stl(tmp_path / "x.stl", (0, 0, 0), (4, 2, 1))
+    saved = save_model("Toe Clamp (rev B).STL", data)
+    assert saved["name"] == "toe-clamp-rev-b.stl"
+    assert list(saved["bounds"]) == [[0, 0, 0], [4, 2, 1]] and saved["triangles"] == 12
+    assert [m["name"] for m in list_models()] == ["toe-clamp-rev-b.stl"]
+    with pytest.raises(FileExistsError):
+        save_model("toe-clamp-rev-b", data)
+    assert save_model("toe-clamp-rev-b", write_stl(tmp_path / "y.stl", (0, 0, 0), (1, 1, 1)), overwrite=True)["bounds"][1] == [1, 1, 1]
+    delete_model("toe-clamp-rev-b.stl")
+    assert list_models() == []
+
+
+@pytest.mark.parametrize("data", [b"", b"not a mesh", b"solid x\nvertex 1 2 3\nendsolid",
+                                  b" " * 80 + struct.pack("<I", 0),
+                                  b" " * 84 + struct.pack("<I", 1)[:0] + b"\0" * 12 + struct.pack("<9f", *[float("nan")] * 9) + b"\0\0"])
+def test_library_refuses_what_is_not_a_mesh(data):
+    if len(data) == 134:  # one triangle
+        data = data[:80] + struct.pack("<I", 1) + data[84:]
+    with pytest.raises(ValueError, match="not an STL"):
+        save_model("junk", data)
+    assert list_models() == []
+
+
+@pytest.mark.parametrize("name", ["", "...", "---", "()"])
+def test_a_name_with_nothing_left_is_refused(name):
+    with pytest.raises(ValueError, match="cannot name"):
+        save_model(name, b"")
+    with pytest.raises(ValueError, match="cannot name"):
+        save_setup(name, [])
+
+
+def test_names_cannot_leave_their_folder():
+    assert "/" not in clean_name("../../etc/passwd") and ".." != clean_name("..")
+
+
+def test_a_config_finds_a_library_model_by_name(tmp_path):
+    save_model("plate", write_stl(tmp_path / "x.stl", (0, 0, 0), (1, 1, 1)))
+    (tmp_path / "emucraft.toml").write_text('[[fixtures]]\nmodel = "plate.stl"\n')
+    assert Path(load_config(tmp_path / "emucraft.toml").fixtures[0].model).parent.name == "fixtures"
+
+
+CLAMP = {"name": "clamp", "min": [0, 0, 0], "max": [1, 1, 1], "units": "inch", "position_units": "inch", "at": [9, 9, 0]}
+PLAIN = "G20\nG0 X0 Y0 Z1\nM30\n"
+NAMED = "(FIXTURE: Kurt 6in)\nG20\nG0 X0 Y0 Z1\nM30\n"
+
+
+def names(result):
+    return [f.name for f in result.fixtures]
+
+
+def test_a_comment_picks_a_saved_setup_written_any_way():
+    save_setup("kurt-6in", fixture_specs([CLAMP]))
+    result = check_text(NAMED, "part.nc", config())
+    assert names(result) == ["clamp"]
+    assert result.fixture_source == "setup kurt-6in (program line 1)"
+    assert result.to_dict()["program"]["fixture"] == "Kurt 6in"
+    # posts often force comments to upper case
+    assert names(check_text(NAMED.replace("Kurt 6in", "KURT 6IN"), "part.nc")) == ["clamp"]
+
+
+def test_a_setup_named_after_the_program_applies_by_itself():
+    save_setup("bracket", fixture_specs([CLAMP]))
+    assert check_text(PLAIN, "Bracket.NC", config()).fixture_source == "setup bracket (named after the program)"
+    assert names(check_text(PLAIN, "other.nc")) == []
+
+
+def test_the_comment_outranks_the_program_name_and_the_config():
+    save_setup("kurt-6in", fixture_specs([CLAMP]))
+    save_setup("part", fixture_specs([{**CLAMP, "name": "by name"}]))
+    assert names(check_text(NAMED, "part.nc", config())) == ["clamp"]
+    assert names(check_text(PLAIN, "part.nc", config())) == ["by name"]
+    assert check_text(PLAIN, "other.nc", config()).fixture_source == "config"
+
+
+def test_fixtures_passed_for_a_check_outrank_everything():
+    save_setup("kurt-6in", fixture_specs([CLAMP]))
+    result = check_text(NAMED, "part.nc", config(), fixtures=fixture_specs([{**CLAMP, "name": "here"}]))
+    assert names(result) == ["here"] and result.fixture_source == "this check"
+    none = check_text(NAMED, "part.nc", config(), fixtures=[])
+    assert names(none) == [] and none.fixture_source is None
+
+
+def test_a_named_setup_that_is_missing_is_a_warning_not_a_pass():
+    stock = config_from_dict({"stock": {"min": [0, 0, 0], "max": [1, 1, 1]}})
+    result = check_text(NAMED, "part.nc", stock)
+    assert result.status == "warn" and result.fixtures == []
+    (message,) = [m for m in result.messages if m.code == "fixtures"]
+    assert "kurt-6in is not saved; no fixtures were checked" in message.text and message.line == 0
+    # the config's fixtures still stand in for it
+    fallback = check_text(NAMED, "part.nc", config())
+    assert len(fallback.fixtures) == 3 and "using the config's fixtures" in fallback.messages[-1].text
+
+
+def test_a_setup_whose_model_is_gone_fails_the_check_loudly(tmp_path):
+    save_model("vise", write_stl(tmp_path / "x.stl", (0, 0, 0), (1, 1, 1)))
+    save_setup("part", fixture_specs([{"model": "vise.stl"}]))
+    delete_model("vise")
+    result = check_text(PLAIN, "part.nc", config())
+    assert result.status == "fail" and result.fixtures == []
+    assert any(m.code == "fixtures" and "cannot be used" in m.text for m in result.messages)
+
+
+def test_your_own_comment_can_name_the_setup():
+    save_setup("kurt", fixture_specs([CLAMP]))
+    cfg = config_from_dict({"comment_rules": [{"pattern": r"^VISE\s*:\s*(.+)$", "field": "program.fixture"}]})
+    assert names(check_text("(VISE: KURT)\nG20\nG0 X0 Y0 Z1\nM30\n", "part.nc", cfg)) == ["clamp"]
+
+
+def test_ordinary_comments_do_not_name_a_fixture():
+    for comment in ("(CLEAR OF THE FIXTURE)", "(FIXTURE)", "(CHECK FIXTURE: BOLTS TIGHT BEFORE RUNNING)"):
+        assert check_text(f"{comment}\nG20\nG0 X0 Y0 Z1\nM30\n", "part.nc").program.fixture_note is None
+
+
+def test_config_survives_the_trip_through_a_saved_simulation():
+    for source in (EXAMPLES / "emucraft.toml", EXAMPLES / "vise" / "emucraft.toml", EXAMPLES / "workholding" / "emucraft.toml"):
+        cfg = load_config(source)
+        assert config_from_dict(config_to_dict(cfg), source.parent) == cfg
+    cfg = config_from_dict({
+        "units": "mm", "stock": {"min": [0, 0, 0], "max": [1, 1, 1]}, "machine": {"limits": {"x": [0, 9]}},
+        "tools": {"3": {"diameter": 6}}, "default_tool": {"stickout": 9},
+        "comment_rules": [{"pattern": "HD=(\\d+)", "field": "tool.holder_diameter"}],
+        "variable_rules": {"500": "tool.stickout"}, "comment_aliases": {"tool.stickout": ["reach"]},
+        "fixtures": [{"min": [0, 0, 0], "max": [1, 1, 1], "rotate": [1, 2, 3], "at": [4, 5, 6], "position_units": "inch"}]})
+    assert config_from_dict(config_to_dict(cfg)) == cfg

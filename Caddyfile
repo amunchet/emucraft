@@ -98,6 +98,9 @@ emu.north.altamontco.com {
     # emucraft's and the laser simulator's MCP servers, the same way:
     #   https://emu.north.altamontco.com/emucraft-mcp/mcp  (leave EMUCRAFT_TOKEN unset)
     #   https://emu.north.altamontco.com/laser-mcp/mcp     (leave LASER_MCP_TOKEN unset)
+    # Set EMUCRAFT_URL=https://emu.north.altamontco.com/emucraft on emucraft-mcp for the simulation links
+    # check_program returns. They open in the viewer below, behind the same sign-in as the rest of the app;
+    # uploading a fixture or saving a setup there is a write, so it takes {$WRITE_PERMISSION}.
     auth0 /emucraft-mcp/* {
         mcp
         require mcp:tools

@@ -42,6 +42,8 @@ def format_text(result: CheckResult, verbose: bool = False) -> str:
         lo, hi = f.bounds
         out.append(f"  fixture  {f.name}  X{_len(lo[0], u)}..{_len(hi[0], u)}  Y{_len(lo[1], u)}..{_len(hi[1], u)}  "
                    f"Z{_len(lo[2], u)}..{_len(hi[2], u)}")
+    if result.fixture_source:
+        out.append(f"  fixtures from {result.fixture_source}")
     if result.grid:
         g = result.grid
         out.append(f"  grid   {g.nx} x {g.ny} cells of {g.cell:g} {unit}")

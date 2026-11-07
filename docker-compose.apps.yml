@@ -13,8 +13,9 @@ services:
     restart: unless-stopped
     expose:
       - "8000"
+    volumes:
+      - emucraft-store:/store   # fixture models, setups and simulations, shared with emucraft-mcp
     # Uncomment to list your own programs (and an emucraft.toml) in the viewer
-    # volumes:
     #   - ./programs:/programs:ro
     networks:
       - emucraft
@@ -68,6 +69,7 @@ services:
 
 volumes:
   moonshot-web:
+  emucraft-store:
   laser-templates:   # proprietary template parts: never bind-mount this into a served directory
 
 networks:
