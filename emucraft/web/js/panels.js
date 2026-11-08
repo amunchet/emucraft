@@ -112,11 +112,11 @@ function sourceOf(spec, key) {
   return s.replace('program line', 'line').replace('config ', '');
 }
 
-export function renderSetup(root, report, { units, readOnly, onApply, settings, holdBase, materials, holdDefaults, vises }) {
+export function renderSetup(root, report, { units, readOnly, onApply, settings, holdBase, materials, holdDefaults, vises, library, lastSetup, onUpload, onSaveSetup, onDelete }) {
   root.textContent = '';
   const u = units === 'mm' ? 'mm' : 'in';
   if (readOnly) root.append(el('p', { class: 'note' }, 'This is a saved report. Run `emucraft serve` to change the setup and re-check.'));
-  const form = el('form', { class: 'setup', onsubmit: e => { e.preventDefault(); onApply(collect(form)); } });
+  const form = el('form', { class: 'setup', onsubmit: e => { e.preventDefault(); onApply(collect(form, units)); } });
 
   form.append(el('h3', {}, `Stock (${u})`));
   const s = report.stock || {};
@@ -126,12 +126,75 @@ export function renderSetup(root, report, { units, readOnly, onApply, settings, 
     field('Y min', 'ymin', s.ymin), field('Y max', 'ymax', s.ymax),
     field('Z min (bottom)', 'zmin', s.zmin), field('Z max (top)', 'zmax', s.zmax, { source: stockSrc })));
 
-  if (report.fixtures?.length) {
-    form.append(el('h3', {}, 'Fixtures'));
-    for (const f of report.fixtures) {
-      const [lo, hi] = f.bounds;
-      form.append(el('div', { class: 'note' }, `${f.name}: X${fmtLen(lo[0], u)}..${fmtLen(hi[0], u)} `
-        + `Y${fmtLen(lo[1], u)}..${fmtLen(hi[1], u)} Z${fmtLen(lo[2], u)}..${fmtLen(hi[2], u)} (from the config file)`));
+  // each card is a config entry; adding, removing or loading fixtures re-checks at once
+  const applyFixtures = fixtures => onApply({ ...collect(form, units), fixtures });
+  if (report.fixtures.length || !readOnly) form.append(el('h3', {}, 'Fixtures'));
+  const fixtureSource = { config: 'From the config file.', 'this check': 'Set here for this check: save a setup to keep it.' }[report.fixture_source]
+    || (report.fixture_source ? `From ${report.fixture_source}.` : 'None: the tool is only checked against the stock and the table.');
+  if (report.fixtures.length || !readOnly) form.append(el('p', { class: 'note' }, fixtureSource));
+  for (const f of report.fixtures) {
+    const spec = f.spec, [lo, hi] = f.bounds;
+    const nice = v => Number(fmtLen(v, u));
+    const k = spec.scale * (spec.units === units ? 1 : units === 'mm' ? 25.4 : 1 / 25.4);
+    form.append(el('div', { class: 'fixture-card', dataset: { spec: JSON.stringify(spec) } },
+      el('div', { class: 'title' }, spec.model ? spec.model.split('/').pop() : 'Box',
+        el('button', { class: 'remove', type: 'button', title: 'Remove this fixture', hidden: readOnly, onclick: e => {
+          e.currentTarget.closest('.fixture-card').remove();
+          applyFixtures(readFixtures(form, units));
+        } }, '×')),
+      el('div', { class: 'form' }, field('Name', 'name', f.name, { type: 'text', wide: true })),
+      el('div', { class: 'form xyz' },
+        [0, 1, 2].map(i => field(`Center ${'XYZ'[i]} (${u})`, `at.${i}`, nice(spec.at[i]))),
+        [0, 1, 2].map(i => field(`Turn ${'XYZ'[i]} (°)`, `rotate.${i}`, spec.rotate[i])),
+        spec.model ? [field('Scale', 'scale', spec.scale),
+          field('Model units', 'units', spec.units, { options: [['inch', 'inch'], ['mm', 'mm']] })]
+          : [0, 1, 2].map(i => field(`Size ${'XYZ'[i]} (${u})`, `size.${i}`, nice((spec.max[i] - spec.min[i]) * k)))),
+      el('div', { class: 'note spans' }, 'Spans', [0, 1, 2].flatMap(i => [' ', el('span', {}, `${'XYZ'[i]}${fmtLen(lo[i], u)}..${fmtLen(hi[i], u)}`)]))));
+  }
+  if (!readOnly) {
+    const models = library?.models || [], setups = library?.setups || [];
+    // a new fixture starts under the stock; its first move is the user's
+    const under = height => [((s.xmin ?? 0) + (s.xmax ?? 0)) / 2, ((s.ymin ?? 0) + (s.ymax ?? 0)) / 2, (s.zmin ?? 0) - height / 2];
+    const addModel = m => {
+      // an STL does not say its units: start with the reading closest in size to the part
+      const spans = [0, 1, 2].map(i => m.bounds[1][i] - m.bounds[0][i]), big = Math.max(...spans);
+      const part = Math.max((s.xmax ?? 1) - (s.xmin ?? 0), (s.ymax ?? 1) - (s.ymin ?? 0));
+      const k = units === 'mm' ? 25.4 : 1 / 25.4, convert = Math.abs(Math.log(big * k / part)) < Math.abs(Math.log(big / part));
+      applyFixtures([...readFixtures(form, units), { name: m.name.replace(/\.stl$/, ''), model: m.name, units: convert ? (units === 'mm' ? 'inch' : 'mm') : units,
+        position_units: units, at: under(spans[2] * (convert ? k : 1)) }]);
+    };
+    const addBox = () => {
+      const t = units === 'mm' ? 12 : 0.5;
+      applyFixtures([...readFixtures(form, units), { name: 'plate', min: [0, 0, 0], units, position_units: units, at: under(t),
+        max: [((s.xmax ?? 1) - (s.xmin ?? 0)) * 1.5, ((s.ymax ?? 1) - (s.ymin ?? 0)) * 1.5, t] }]);
+    };
+    const upload = el('input', { type: 'file', accept: '.stl', hidden: true, onchange: async e => {
+      const model = e.target.files[0] && await onUpload(e.target.files[0]);
+      e.target.value = '';
+      if (model) addModel(model);
+    } });
+    const pick = (label, options, onpick) => {
+      const select = el('select', { class: 'select', 'aria-label': label }, el('option', { value: '' }, label), options);
+      select.addEventListener('change', () => { const name = select.value; select.value = ''; if (name) onpick(name); });
+      return select;
+    };
+    const ownSetup = report.program.fixture || report.program.name.replace(/^.*\//, '').replace(/\.[^.]*$/, '');
+    const setupName = el('input', { type: 'text', 'aria-label': 'Setup name', placeholder: 'Setup name', value: lastSetup || ownSetup });
+    form.append(
+      el('div', { class: 'fixture-tools' },
+        pick('Add a fixture…', [...models.map(m => el('option', { value: m.name }, m.name)), el('option', { value: 'box' }, 'A box')],
+          name => (name === 'box' ? addBox() : addModel(models.find(m => m.name === name)))),
+        el('button', { class: 'btn', type: 'button', onclick: () => upload.click() }, 'Upload STL…'), upload),
+      el('div', { class: 'fixture-tools' }, setupName,
+        el('button', { class: 'btn', type: 'button', onclick: () => onSaveSetup(setupName.value, readFixtures(form, units), collect(form, units), setupName.value === ownSetup) }, 'Save setup'),
+        setups.length ? pick('Load a setup…', setups.map(x => el('option', { value: x.name }, x.name)),
+          name => applyFixtures(setups.find(x => x.name === name).fixtures)) : null),
+      el('p', { class: 'note' }, 'A setup named after the program is used for it from now on; so is one named by a (FIXTURE: name) comment in the program.'));
+    if (models.length || setups.length) {
+      form.append(el('details', { class: 'library' }, el('summary', {}, 'Manage the library'),
+        [...models.map(m => ['fixtures', m.name]), ...setups.map(x => ['setups', x.name])].map(([kind, name]) => el('div', {},
+          `${kind === 'fixtures' ? 'Model' : 'Setup'} ${name}`,
+          el('button', { class: 'remove', type: 'button', title: `Delete ${name}`, onclick: () => onDelete(kind, name) }, '×')))));
     }
   }
 
@@ -227,9 +290,28 @@ function value(input) {
   return Number.isFinite(n) ? n : null;
 }
 
-// Only what the user changed, so values keep their provenance.
-function collect(form) {
+// The fixture cards as config entries, positions in program units.
+function readFixtures(form, units) {
+  return [...form.querySelectorAll('.fixture-card')].map(card => {
+    const spec = JSON.parse(card.dataset.spec);
+    const point = name => [0, 1, 2].map(i => value(card.querySelector(`[name="${name}.${i}"]`)));
+    spec.name = card.querySelector('[name="name"]').value;
+    spec.at = point('at');
+    spec.rotate = point('rotate');
+    if (spec.model) {
+      spec.scale = value(card.querySelector('[name="scale"]'));
+      spec.units = value(card.querySelector('[name="units"]'));
+    } else {
+      Object.assign(spec, { min: [0, 0, 0], max: point('size'), scale: 1, units });
+    }
+    return spec;
+  });
+}
+
+// Only what the user changed, so values keep their provenance. Fixtures go as a whole list.
+function collect(form, units) {
   const out = {};
+  if ([...form.querySelectorAll('.fixture-card input, .fixture-card select')].some(changed)) out.fixtures = readFixtures(form, units);
   const stockInputs = ['xmin', 'ymin', 'zmin', 'xmax', 'ymax', 'zmax'].map(k => form.querySelector(`[name="${k}"]`));
   if (stockInputs.some(changed)) {
     const stock = stockInputs.map(value);

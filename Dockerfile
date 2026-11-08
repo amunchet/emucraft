@@ -12,7 +12,8 @@ RUN make -C kernel native
 FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    EMUCRAFT_KERNEL=/app/lib/libemucraft.so
+    EMUCRAFT_KERNEL=/app/lib/libemucraft.so \
+    EMUCRAFT_DATA=/store
 
 WORKDIR /app
 RUN pip install --no-cache-dir "mcp>=2"
@@ -20,8 +21,9 @@ COPY emucraft/ emucraft/
 COPY examples/ examples/
 COPY --from=kernel /build/kernel/build/libemucraft.so lib/
 
-# Optional: mount G-code here to list it in the viewer. /data keeps the MCP server's settings.
-RUN mkdir /programs /data && useradd --system --no-create-home emucraft && chown emucraft /data
+# Optional: mount G-code here to list it in the viewer. /data keeps the MCP server's settings;
+# /store is what the viewer and the MCP server share: fixture models, setups and simulations.
+RUN mkdir /programs /data /store && useradd --system --no-create-home emucraft && chown emucraft /data /store
 USER emucraft
 
 EXPOSE 8000

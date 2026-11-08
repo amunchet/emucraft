@@ -17,13 +17,15 @@ Example (all sections optional)::
     resolution = 0.002
     link_feed = 700           # feed moves this fast must not touch material
 
-    [[fixtures]]              # nothing may touch these (STL path relative to this file)
+    [[fixtures]]              # nothing may touch these (STL next to this file, or in the fixture library)
     name = "vise"
     model = "kurt.stl"
     units = "mm"              # units of the model (default: this file's)
     scale = 10                # e.g. a model drawn in cm
-    rotate = 90               # degrees about Z, around the model origin
-    offset = [3.5, -1.2, -2.0]
+    rotate = 90               # degrees about Z, or [x, y, z]
+    at = [2.5, 1.5, -1.0]     # where the center of the model goes
+    # offset = [3.5, -1.2, -2.0]   # instead of at: where the model's own origin goes
+    # position_units = "inch" # units of at / offset (default: this file's)
 
     [[fixtures]]              # or a box, placed the same way
     min = [-4, -1, -0.5]
@@ -51,12 +53,12 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import fields
+from dataclasses import asdict, fields
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
 
 from .gcode import DEFAULT_LABEL_ALIASES
-from .model import CheckSpec, Config, FixtureSpec, MachineSpec, StockSpec
+from .model import CheckSpec, Config, FixtureSpec, MachineSpec, StockSpec, fixture_dir
 
 try:  # Python 3.11+
     import tomllib as _toml
@@ -148,7 +150,7 @@ _RULE_TARGETS = (
     {f"tool.{name}" for name in _TOOL_RULES if name != "shape"}
     | {"tool.number"}
     | {f"stock.{axis}{end}" for axis in "xyz" for end in ("min", "max")}
-    | {"program.units", "program.tool_point"}
+    | {"program.units", "program.tool_point", "program.fixture"}
 )
 # label aliases only carry numbers: the same targets as the defaults
 _ALIAS_TARGETS = set(DEFAULT_LABEL_ALIASES)
@@ -221,34 +223,46 @@ def config_from_dict(data: Dict[str, Any], base: Optional[Path] = None) -> Confi
             raise ConfigError("[[fixtures]] must be a list of tables")
         for i, fx in enumerate(fixtures):
             section = f"fixtures.{i + 1}"
-            _check_keys(section, fx, {"name", "model", "min", "max", "units", "scale", "rotate", "offset"})
-            spec = FixtureSpec(name=str(fx.get("name") or ""), units=fx.get("units"),
-                               scale=fx.get("scale", 1.0), rotate=fx.get("rotate", 0.0))
+            _check_keys(section, fx, {"name", "model", "min", "max", "units", "scale", "rotate", "offset", "at",
+                                      "position_units"})
+            spec = FixtureSpec(name=str(fx.get("name") or ""), units=fx.get("units"), scale=fx.get("scale", 1.0),
+                               position_units=fx.get("position_units"))
             if ("model" in fx) == ("min" in fx or "max" in fx):
                 raise ConfigError(f"[{section}] needs either model = \"file.stl\" or min and max")
             if "model" in fx:
                 if not isinstance(fx["model"], str):
                     raise ConfigError(f"[{section}] model must be a file path")
-                model = Path(fx["model"]).expanduser()
-                model = (base / model if base is not None and not model.is_absolute() else model).resolve()
+                name = Path(fx["model"]).expanduser()
+                near = (base / name if base is not None else name).resolve()
+                model = near if near.is_file() else (fixture_dir() / name).resolve()
                 if not model.is_file():
-                    raise ConfigError(f"[{section}] model {model} not found")
+                    raise ConfigError(f"[{section}] model {near} not found")
                 spec.model = str(model)
             else:
                 lo, hi = fx.get("min"), fx.get("max")
                 if not (_point(lo) and _point(hi) and all(a < b for a, b in zip(lo, hi))):
                     raise ConfigError(f"[{section}] needs min = [x, y, z] < max = [x, y, z]")
                 spec.box = (tuple(map(float, lo)), tuple(map(float, hi)))
-            if spec.units is not None and spec.units not in ("inch", "mm"):
-                raise ConfigError(f"[{section}] units must be 'inch' or 'mm'")
+            for key in ("units", "position_units"):
+                if getattr(spec, key) is not None and getattr(spec, key) not in ("inch", "mm"):
+                    raise ConfigError(f"[{section}] {key} must be 'inch' or 'mm'")
             if not (_number(spec.scale) and spec.scale > 0):
                 raise ConfigError(f"[{section}] scale must be a positive number")
-            if not _number(spec.rotate):
-                raise ConfigError(f"[{section}] rotate must be a number of degrees")
+            rotate = fx.get("rotate", 0.0)
+            rotate = [0.0, 0.0, rotate] if _number(rotate) else rotate
+            if not _point(rotate):
+                raise ConfigError(f"[{section}] rotate must be degrees about Z, or [x, y, z]")
+            spec.rotate = tuple(map(float, rotate))
+            if "at" in fx and "offset" in fx:
+                raise ConfigError(f"[{section}] needs at or offset, not both")
             offset = fx.get("offset", [0.0, 0.0, 0.0])
             if not _point(offset):
                 raise ConfigError(f"[{section}] offset must be [x, y, z]")
             spec.offset = tuple(map(float, offset))
+            if "at" in fx:
+                if not _point(fx["at"]):
+                    raise ConfigError(f"[{section}] at must be [x, y, z]")
+                spec.at = tuple(map(float, fx["at"]))
             cfg.fixtures.append(spec)
         tools = data.get("tools") or {}
         if not isinstance(tools, dict):
@@ -308,6 +322,44 @@ def config_from_dict(data: Dict[str, Any], base: Optional[Path] = None) -> Confi
     except TypeError as exc:
         raise ConfigError(str(exc)) from None
     return cfg
+
+
+def fixture_dict(spec: FixtureSpec) -> Dict[str, Any]:
+    """A fixture as a config entry; models in the library go by name, so saved setups stay portable."""
+    out: Dict[str, Any] = {"name": spec.name, "scale": spec.scale, "rotate": list(spec.rotate)}
+    if spec.model:
+        model = Path(spec.model)
+        out["model"] = model.name if model.parent == fixture_dir() else str(model)
+    else:
+        out["min"], out["max"] = list(spec.box[0]), list(spec.box[1])
+    if spec.at is not None:
+        out["at"] = list(spec.at)
+    else:
+        out["offset"] = list(spec.offset)
+    for key in ("units", "position_units"):
+        if getattr(spec, key):
+            out[key] = getattr(spec, key)
+    return out
+
+
+def config_to_dict(config: Config) -> Dict[str, Any]:
+    """A config as config_from_dict reads it, kept with a saved simulation so the viewer can re-check it."""
+    out = {
+        "units": config.units,
+        "machine": asdict(config.machine),
+        "check": asdict(config.check),
+        "stock": config.stock and {"min": [config.stock.xmin, config.stock.ymin, config.stock.zmin],
+                                   "max": [config.stock.xmax, config.stock.ymax, config.stock.zmax]},
+        "fixtures": [fixture_dict(f) for f in config.fixtures],
+        "tools": {str(k): v for k, v in config.tools.items()},
+        "default_tool": config.default_tool,
+        "optimize": config.optimize,
+        "workholding": config.workholding,
+        "comment_rules": [{"pattern": p, "field": f} for p, f in config.comment_rules],
+        "variable_rules": {str(k): v for k, v in config.variable_rules.items()},
+        "comment_aliases": config.comment_aliases,
+    }
+    return {k: v for k, v in out.items() if v}
 
 
 def load_config(path: Optional[Union[str, Path]]) -> Config:

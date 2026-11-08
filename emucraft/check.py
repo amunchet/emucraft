@@ -18,12 +18,13 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 from . import __version__
 from .config import find_config, load_config
-from .fixture import Fixture, place_fixtures
+from .fixture import Fixture, choose_fixtures, place_fixtures
 from .gcode import CYCLE, NOCUT, RAPID, SPINDLE, Interpreter, Message, Program
 from .kernel import EV_BODY, EV_FLUTE, EV_NOCUT_CUT, EV_RAPID_CUT, EV_SPINDLE_OFF_CUT, Sim, simplify
 from .model import (
     SHAPE_IDS,
     Config,
+    FixtureSpec,
     StockSpec,
     ToolSpec,
     default_rapid_rate,
@@ -97,6 +98,7 @@ class CheckResult:
     initial_heights: Optional[array] = None  # starting stock of a chained check
     fixtures: List[Fixture] = field(default_factory=list)
     workholding: Optional[dict] = None  # see workholding.analyze
+    fixture_source: Optional[str] = None  # where the fixtures came from
 
     @property
     def errors(self) -> List[Issue]:
@@ -141,11 +143,13 @@ class CheckResult:
                 "moves": p.n_moves,
                 "tools": list(p.slot_tools),
                 "end_line": None if p.end_line is None else p.end_line + 1,
+                "fixture": p.fixture_note,
             },
             "issues": [i.to_dict() for i in self.issues],
             "messages": [m.to_dict() for m in self.messages],
             "stock": self.stock.to_dict() if self.stock else None,
             "fixtures": [f.to_dict() for f in self.fixtures],
+            "fixture_source": self.fixture_source,
             "tools": {str(k): v.to_dict() for k, v in self.tools.items()},
             "machine": {
                 "rapid_rate": self.stats.get("rapid_rate"),
@@ -314,6 +318,7 @@ def run_check(
     table_z: Optional[float] = None,
     link_feed: Optional[float] = None,
     workholding: Optional[Dict[str, object]] = None,
+    fixtures: Optional[List[FixtureSpec]] = None,
     threads: Optional[int] = None,
     keep_sim: bool = False,
     previous: Optional["CheckResult"] = None,
@@ -324,7 +329,8 @@ def run_check(
 
     ``stock``, ``cell``, ``table_z`` and ``link_feed`` override the
     configuration and are in program units, as are the ``workholding``
-    options laid over the configuration's (see workholding.py).
+    options laid over the configuration's (see workholding.py). ``fixtures``
+    are the fixtures for this check, instead of choose_fixtures' pick.
 
     ``previous`` chains programs: this one starts from the stock the previous
     check (run with ``keep_sim=True``) left behind, on the same grid. Its
@@ -525,7 +531,11 @@ def run_check(
     # Fixtures are a second block that must stay whole: every move runs over
     # them as a link, so anything the cutter removes there, or the shank or
     # holder touches, is a collision.
-    fixtures = place_fixtures(config, units) if config.fixtures else []
+    fixture_source = "this check"
+    if fixtures is None:
+        fixtures, fixture_source, notes = choose_fixtures(program, config)
+        messages.extend(notes)
+    fixtures = place_fixtures(config, units, fixtures)
     fixture_time = 0.0
     if fixtures and slot_specs and program.n_moves:
         tk = time.perf_counter()
@@ -610,7 +620,7 @@ def run_check(
         sim.close()
         sim = None
     return CheckResult(program, config, stock, tools, grid, issues, messages, stats, timing, flags, sim,
-                       initial_heights, fixtures, hold_report)
+                       initial_heights, fixtures, hold_report, fixture_source if fixtures else None)
 
 
 def _fmt(value: float, units: str) -> str:

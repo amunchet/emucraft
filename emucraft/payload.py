@@ -1,20 +1,27 @@
 """What the browser viewer needs to replay a check: the report plus the
 kernel inputs (points, flags, tool slots, tool geometry) as base64 typed
-arrays, so its WebAssembly copy of the kernel runs the exact same moves."""
+arrays, so its WebAssembly copy of the kernel runs the exact same moves.
+A check can be saved that way, for a link that opens it in the viewer."""
 
 from __future__ import annotations
 
 import base64
 import gzip
+import json
 import math
+import re
+import secrets
 import sys
 from array import array
 from pathlib import Path
 from typing import Dict, List, Optional
 
 from .check import CheckResult
+from .config import config_to_dict
+from .model import data_dir, write_file
 
 WEB = Path(__file__).resolve().parent / "web"
+KEEP_SIMULATIONS = 2 << 30  # bytes of saved simulations; the oldest go first
 DISPLAY_CELLS = 1_500_000
 # Cells swept by the browser replay (moves x tool disk area): ~3 s of WebAssembly.
 DISPLAY_WORK = 2.5e8
@@ -110,3 +117,32 @@ def analysis_payload(result: CheckResult) -> dict:
         "fixtures": [{"name": f.name, "triangles_gz": base64.b64encode(gzip.compress(f.triangles.tobytes(), 6)).decode("ascii")}
                      for f in result.fixtures],
     }
+
+
+def _simulation_path(ident: str) -> Path:
+    if not re.fullmatch(r"[0-9a-f]{32}", ident):  # ids are made here: nothing else reaches the disk
+        raise FileNotFoundError("no such simulation")
+    return data_dir() / "simulations" / f"{ident}.json.gz"
+
+
+def save_simulation(result: CheckResult, settings: Optional[dict] = None) -> str:
+    """Keep a check as the viewer shows it, with what it takes to re-check it; returns its id."""
+    ident = secrets.token_hex(16)
+    path = _simulation_path(ident)
+    doc = {"name": result.program.name, "text": result.program.text, "config": config_to_dict(result.config),
+           "settings": settings or {}, "payload": analysis_payload(result)}
+    write_file(path, gzip.compress(json.dumps(doc).encode("utf-8"), compresslevel=5))
+    total = 0
+    try:
+        for file in sorted(path.parent.glob("*.json.gz"), key=lambda f: f.stat().st_mtime_ns, reverse=True):
+            total += file.stat().st_size
+            if total > KEEP_SIMULATIONS and file != path:
+                file.unlink()
+    except FileNotFoundError:  # checks saved at the same moment prune together: another one got there first
+        pass
+    return ident
+
+
+def load_simulation(ident: str) -> bytes:
+    """A saved simulation's JSON; FileNotFoundError once it is gone."""
+    return gzip.decompress(_simulation_path(ident).read_bytes())

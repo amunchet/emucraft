@@ -10,10 +10,16 @@ request to /mcp needs ``Authorization: Bearer <token>``. The configuration
 for a call is, first found: ``config_path``, an emucraft.toml / .json next to
 the program, then the server's settings file (edited with update_settings,
 and an ordinary emucraft JSON config, so ``emucraft check -c`` can use it).
+
+Fixture models and setups live in the data folder ($EMUCRAFT_DATA), shared with the web viewer: PUT
+/fixtures/<name> takes a raw STL too big for a tool call. check_program saves each check there as well;
+$EMUCRAFT_URL, the viewer's public address, turns that into a link for the user.
 """
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import os
 import secrets
@@ -24,11 +30,22 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
 from .check import check_text, parse_program
-from .config import ConfigError, config_from_dict, find_config, load_config
+from .config import ConfigError, config_from_dict, find_config, fixture_dict, load_config
+from .fixture import (
+    choose_fixtures,
+    delete_model,
+    delete_setup,
+    list_models,
+    list_setups,
+    read_setup,
+    save_model,
+    save_setup,
+)
 from .gcode import DEFAULT_COMMENT_RULES, DEFAULT_FUZZ_THRESHOLD, DEFAULT_LABEL_ALIASES, DEFAULT_VARIABLE_RULES
 from .kernel import KernelError
-from .model import Config, StockSpec, resolve_stock, resolve_tools
-from .server import PROGRAM_SUFFIXES
+from .model import Config, FixtureSpec, StockSpec, fixture_dir, resolve_stock, resolve_tools
+from .payload import save_simulation
+from .server import MAX_BODY, PROGRAM_SUFFIXES
 
 # Where `path` and `config_path` may point: anywhere (None), or inside this folder. Set by serve().
 programs: Optional[Path] = None
@@ -44,8 +61,12 @@ server = MCPServer(
         "and from which line. When a value is missing or misread, tune detection with update_settings "
         "(comment_aliases, comment_rules, variable_rules, check.fuzz_threshold) or pass tools / stock "
         "to check_program. Pass workholding (vise or toe clamps, part material, torque) to check_program "
-        "to learn whether the cutting forces can move the part and what torque holds it. Pass fixtures "
-        "(vises, clamps, plates as boxes or STL models) to check the tool against them for that one call."
+        "to learn whether the cutting forces can move the part and what torque holds it. For fixtures, "
+        "upload_fixture keeps an STL in the library (list_fixtures shows it); place it with check_program's "
+        "fixtures, and keep the placement with save_fixture_setup. G-code does not say what holds the part: "
+        "a check uses the fixtures you pass, then the saved setup named by a (FIXTURE: name) comment, then "
+        "the saved setup named after the program, then the config's. Each check_program result has "
+        "simulation.url, a page where the user can watch that check in 3D with its fixtures: give it to them."
     ),
 )
 
@@ -81,16 +102,28 @@ def _file(path: Optional[str]) -> Optional[str]:
     return str(file)
 
 
-def _guard_models(config: Config) -> None:
-    """Fixture models are files too: keep them inside the programs folder when there is one."""
+def _guard_models(specs: List[FixtureSpec]) -> None:
+    """Fixture models are files too: keep them inside the library or the programs folder when there is one."""
     if programs is None and not remote:
         return
-    for fx in config.fixtures:
-        if fx.model and (programs is None or not Path(fx.model).is_relative_to(programs)):
+    roots = [fixture_dir()] + ([programs] if programs else [])
+    for fx in specs:
+        if fx.model and not any(Path(fx.model).is_relative_to(root) for root in roots):
             raise ToolError(f"fixture model {fx.model} is outside the programs folder")
 
 
-def _load(path: Optional[str], gcode: Optional[str], config_path: Optional[str]) -> Tuple[str, str, Config, Optional[str]]:
+def _specs(entries: List[Dict[str, Any]], base: Optional[Path] = None) -> List[FixtureSpec]:
+    """Fixtures named in a tool call: relative models are in `base`, then the library."""
+    try:
+        specs = config_from_dict({"fixtures": entries}, base).fixtures
+    except ConfigError as exc:
+        raise ToolError(str(exc)) from None
+    _guard_models(specs)
+    return specs
+
+
+def _load(path: Optional[str], gcode: Optional[str], config_path: Optional[str],
+          name: Optional[str] = None) -> Tuple[str, str, Config, Optional[str]]:
     """(text, name, config, where the config came from) for a tool call."""
     if (path is None) == (gcode is None):
         raise ToolError("Pass exactly one of `path` or `gcode`")
@@ -103,8 +136,8 @@ def _load(path: Optional[str], gcode: Optional[str], config_path: Optional[str])
         config = load_config(source) if source else Config()
     except (OSError, ConfigError) as exc:
         raise ToolError(str(exc)) from None
-    _guard_models(config)
-    return text, Path(path).name if path else "program", config, None if source is None else str(source)
+    _guard_models(config.fixtures)
+    return text, name or (Path(path).name if path else "program"), config, None if source is None else str(source)
 
 
 @server.tool()
@@ -129,6 +162,8 @@ def check_program(
     resolution: Optional[float] = None,
     workholding: Optional[Dict[str, Any]] = None,
     fixtures: Optional[List[Dict[str, Any]]] = None,
+    fixture_setup: Optional[str] = None,
+    name: Optional[str] = None,
 ) -> dict:
     """Simulate a G-code program and report collisions, and whether the vise or clamps hold the part.
 
@@ -137,7 +172,10 @@ def check_program(
     and the worst position/depth. A broken-tool issue is a warning: had the tool snapped as its run
     started, the holder would hit the stock it left uncut (needs holder_diameter and stickout; turn it
     off with check.broken_tool in update_settings). messages lists what the interpreter could not
-    simulate. tools shows the geometry used and where every value came from.
+    simulate. tools shows the geometry used and where every value came from. fixtures shows each one
+    as placed (bounds, and spec: an entry to pass back with `at` changed); fixture_source says why it
+    was used. simulation.url opens this check, fixtures included, in the 3D viewer: give it to the
+    user. It is null when the server does not know the viewer's address ($EMUCRAFT_URL).
 
     stock       - [xmin, ymin, zmin, xmax, ymax, zmax] in program units, instead of the CAM header.
     tools       - per-tool overrides in program units, e.g. {"20": {"holder_diameter": 1.3,
@@ -158,14 +196,21 @@ def check_program(
                   friction (0.15), jaw_width, axis ("y": the jaws close along Y), center, lift_stop
                   (a dovetail or step holds the part down), force (instead of torque), nut_factor,
                   bolt_grade, lever, kc1 and mc (a material of your own), radial_ratio, axial_ratio.
-    fixtures    - solids the tool must not touch, for this call, instead of the config's. Each is a box
-                  {"name": "toe clamp", "min": [x, y, z], "max": [x, y, z]} or {"name": "vise",
-                  "model": "kurt.stl"} (a file in the programs folder), with optional units, scale,
-                  rotate (degrees about Z) and offset [x, y, z]. Lengths are in the config's units,
-                  or program units when it sets none, as for the config's own fixtures; give
-                  "units" ("inch" or "mm") to be explicit.
+    fixtures    - solids the tool must not touch, for this call, instead of any saved or configured
+                  ones ([] for none). Each is a box {"name": "toe clamp", "min": [x, y, z], "max": [x,
+                  y, z]} or {"name": "vise", "model": "kurt.stl"} (from list_fixtures, or a file in the
+                  programs folder), placed with "at": [x, y, z], where the center of its own (unturned)
+                  bounding box goes. Optional: rotate (degrees about Z, or [x, y, z], about that center), scale,
+                  units ("inch" or "mm", the model's lengths: an STL does not say) and position_units
+                  (those of at). Lengths default to the config's units, or program units when it
+                  sets none. Without at, offset [x, y, z] moves the model's own origin instead.
+    fixture_setup - the saved setup to use (list_fixtures), instead of fixtures.
+    name        - a file name for inline gcode: it titles the simulation, and a setup saved under
+                  its stem applies (name "bracket.nc" uses setup "bracket").
     """
-    text, name, config, source = _load(path, gcode, config_path)
+    if fixtures is not None and fixture_setup is not None:
+        raise ToolError("Pass fixtures or fixture_setup, not both")
+    text, name, config, source = _load(path, gcode, config_path, name)
     if stock is not None and len(stock) != 6:
         raise ToolError("stock needs 6 numbers: xmin, ymin, zmin, xmax, ymax, zmax")
     overrides: Dict[object, Dict[str, Any]] = {}
@@ -174,12 +219,12 @@ def check_program(
             overrides["*" if key == "*" else int(str(key).lstrip("Tt"))] = values
         except ValueError:
             raise ToolError(f"'{key}' is not a tool number (use \"20\", \"T20\" or \"*\")") from None
-    if fixtures is not None:
-        try:
-            config.fixtures = config_from_dict({"fixtures": fixtures}, programs).fixtures
-        except ConfigError as exc:
-            raise ToolError(str(exc)) from None
-        _guard_models(config)
+    specs = None if fixtures is None else _specs(fixtures, programs)
+    if fixture_setup is not None:
+        saved = read_setup(fixture_setup)
+        if saved is None:
+            raise ToolError(f"No fixture setup named {fixture_setup}: see list_fixtures")
+        specs = _specs(saved, fixture_dir())  # a setup's bare names are library models, as for every other reader
     try:
         result = check_text(
             text, name, config,
@@ -187,21 +232,30 @@ def check_program(
             stock=StockSpec(*map(float, stock), source="override") if stock else None,
             cell=resolution,
             workholding=workholding,
+            fixtures=specs,
         )
     except (KernelError, ValueError) as exc:
         raise ToolError(str(exc)) from None
-    return {**result.to_dict(), "config": source}
+    # what the viewer needs to re-check it: the same keys as its own settings
+    settings = {"stock": stock, "tools": tools, "resolution": resolution, "workholding": workholding,
+                "fixtures": None if specs is None else [fixture_dict(s) for s in specs]}
+    ident = save_simulation(result, {k: v for k, v in settings.items() if v is not None})
+    base = os.environ.get("EMUCRAFT_URL") or (None if remote else "http://127.0.0.1:8765")
+    return {**result.to_dict(), "config": source,
+            "simulation": {"id": ident, "url": f"{base.rstrip('/')}/?sim={ident}" if base else None}}
 
 
 @server.tool()
-def program_info(path: Optional[str] = None, gcode: Optional[str] = None, config_path: Optional[str] = None) -> dict:
-    """Show the tool and stock data read from a program's comments and macro variables, without simulating.
+def program_info(path: Optional[str] = None, gcode: Optional[str] = None, config_path: Optional[str] = None,
+                 name: Optional[str] = None) -> dict:
+    """Show the tool, stock and fixture data read from a program's comments and macro variables, without simulating.
 
     detections lists every value found with its 1-based line and that line's text; messages with
-    code "comment-label" mark labels matched loosely (typos, variants). Pass a few comment lines as
-    `gcode` to try out detection settings.
+    code "comment-label" mark labels matched loosely (typos, variants). fixtures names what a check
+    of it would use and fixture_source why. Pass a few comment lines as `gcode` to try out detection
+    settings; `name` is a file name for inline gcode, as for check_program.
     """
-    text, name, config, source = _load(path, gcode, config_path)
+    text, name, config, source = _load(path, gcode, config_path, name)
     program = parse_program(text, name, config)
     detections = [
         {"target": f"tool.{fld}", "tool": number, "value": value, "line": note.lines[fld] + 1,
@@ -213,7 +267,11 @@ def program_info(path: Optional[str] = None, gcode: Optional[str] = None, config
          "text": program.lines[program.stock_lines[fld]].strip()}
         for fld, value in program.stock_note.items()
     ]
+    if program.fixture_note:
+        detections.append({"target": "program.fixture", "value": program.fixture_note,
+                           "line": program.fixture_line + 1, "text": program.lines[program.fixture_line].strip()})
     stock = resolve_stock(program, config)[0]
+    specs, fixture_source, notes = choose_fixtures(program, config)
     return {
         "name": program.name,
         "units": program.units,
@@ -222,7 +280,9 @@ def program_info(path: Optional[str] = None, gcode: Optional[str] = None, config
         "detections": sorted(detections, key=lambda d: d["line"]),
         "stock": stock.to_dict() if stock else None,
         "tools": {str(k): v.to_dict() for k, v in resolve_tools(program, config).items()},
-        "messages": [m.to_dict() for m in program.messages],
+        "fixtures": [f.label for f in specs],
+        "fixture_source": fixture_source,
+        "messages": [m.to_dict() for m in program.messages + notes],
         "config": source,
     }
 
@@ -235,7 +295,9 @@ def get_settings() -> dict:
                       these (case, punctuation and typos forgiven) set the target. Replaces the
                       default list for each target given.
     comment_rules   - [{pattern, field}] regexes on comment text; group 1 is the value. Run before
-                      the defaults; aliases are only tried when no rule matched.
+                      the defaults; aliases are only tried when no rule matched. The field
+                      program.fixture takes the name of a saved fixture setup, so a program can
+                      say what holds it in your shop's own words, like (VISE: kurt).
     variable_rules  - {"#127": "tool.holder_length"} macro variables that carry tool data.
     check.fuzz_threshold - 0-1 label similarity needed (default 0.85, 1 = exact labels only).
     """
@@ -257,9 +319,10 @@ def update_settings(changes: Dict[str, Any]) -> dict:
 
     Top-level keys: comment_aliases, comment_rules, variable_rules, check, machine, stock, fixtures,
     tools, default_tool, workholding, units. check.broken_tool false skips the broken-tool warnings.
-    fixtures is a list of {name, model (STL path, relative to the programs folder if the server has
-    one, else to the settings file) or min/max box, units, scale, rotate (degrees about Z), offset
-    [x, y, z]}; they apply to every later call: for one program, pass fixtures to check_program.
+    fixtures is a list of {name, model (from list_fixtures, or an STL path relative to the programs
+    folder if the server has one, else to the settings file) or min/max box, units, scale, rotate,
+    at, position_units}, as for check_program; they apply to every later call that finds no saved
+    setup: for one program, pass fixtures to check_program or use save_fixture_setup.
     Tables (comment_aliases, variable_rules, check, machine, tools, default_tool, workholding) are
     merged key by key; anything else is replaced. A null value removes a key. workholding takes the
     options of check_program's workholding, in `units`.
@@ -279,10 +342,10 @@ def update_settings(changes: Dict[str, Any]) -> dict:
             settings[key] = value
     if programs is not None:  # the settings file lives elsewhere, as /data does in Docker
         for fx in settings.get("fixtures") or []:
-            if isinstance(fx, dict) and isinstance(fx.get("model"), str):
+            if isinstance(fx, dict) and isinstance(fx.get("model"), str) and (programs / fx["model"]).is_file():
                 fx["model"] = str((programs / fx["model"]).resolve())
     try:
-        _guard_models(config_from_dict(settings, settings_path().parent))
+        _guard_models(config_from_dict(settings, settings_path().parent).fixtures)
     except (ConfigError, ToolError) as exc:
         raise ToolError(f"Settings not saved: {exc}") from None
     path = settings_path()
@@ -300,6 +363,67 @@ def reset_settings() -> dict:
     return {"settings_file": str(path), "settings": {}}
 
 
+@server.tool()
+def list_fixtures() -> dict:
+    """The fixture library, shared with the web viewer's Setup tab.
+
+    models - uploaded STL files: name (use it as a fixture's "model"), bytes, triangles and bounds, in
+             the file's own units. An STL does not say what they are, so read them to pick "units".
+    setups - saved setups: name and fixtures, entries for check_program's fixtures.
+    """
+    return {"models": list_models(), "setups": list_setups()}
+
+
+@server.tool()
+def upload_fixture(name: str, data: str, replace: bool = False) -> dict:
+    """Keep an STL file in the fixture library, under a cleaned-up `name`; returns it as list_fixtures does.
+
+    data is the file in base64. A file too big for a tool call goes up as the raw bytes instead:
+    PUT /fixtures/<name> on this server with the same bearer token (?replace=1 to overwrite). The
+    viewer's Setup tab uploads too. replace overwrites a model already there, which also changes
+    every setup that uses it.
+    """
+    try:
+        return save_model(name, base64.b64decode(data, validate=True), replace)
+    except (binascii.Error, FileExistsError, ValueError) as exc:
+        raise ToolError(str(exc)) from None
+
+
+@server.tool()
+def delete_fixture(name: str) -> dict:
+    """Remove a model from the fixture library. Setups that use it stop working until it is back."""
+    try:
+        delete_model(name)
+    except (FileNotFoundError, ValueError):
+        raise ToolError(f"No fixture model named {name}") from None
+    return {"deleted": name}
+
+
+@server.tool()
+def save_fixture_setup(name: str, fixtures: List[Dict[str, Any]]) -> dict:
+    """Keep fixtures as placed under a name, so checks find them without passing fixtures again.
+
+    fixtures is a list as for check_program. A program uses the setup when it has a (FIXTURE: name)
+    comment or is called name.nc; any other program can ask for it with fixture_setup. Give each
+    entry "units" and "position_units" so that it reads the same for inch and mm programs. Saving
+    under a name that is taken replaces that setup: the viewer's Setup tab edits the same ones.
+    """
+    try:
+        return save_setup(name, _specs(fixtures, programs))
+    except ValueError as exc:
+        raise ToolError(str(exc)) from None
+
+
+@server.tool()
+def delete_fixture_setup(name: str) -> dict:
+    """Remove a saved fixture setup."""
+    try:
+        delete_setup(name)
+    except FileNotFoundError:
+        raise ToolError(f"No fixture setup named {name}") from None
+    return {"deleted": name}
+
+
 @server.custom_route("/health", methods=["GET"])
 async def health(request):
     """Liveness, for the container's health check."""
@@ -308,12 +432,35 @@ async def health(request):
     return JSONResponse({"status": "ok"})
 
 
+@server.custom_route("/fixtures/{name}", methods=["PUT"])
+async def put_fixture(request):
+    """Upload a fixture model as the raw request body."""
+    import anyio
+    from starlette.responses import JSONResponse
+
+    if int(request.headers.get("content-length") or 0) > MAX_BODY:
+        return JSONResponse({"error": "request too large"}, status_code=413)
+    chunks, size = [], 0
+    async for chunk in request.stream():  # counted as it comes: a chunked upload says no length up front
+        size += len(chunk)
+        if size > MAX_BODY:
+            return JSONResponse({"error": "request too large"}, status_code=413)
+        chunks.append(chunk)
+    try:
+        return JSONResponse(await anyio.to_thread.run_sync(
+            save_model, request.path_params["name"], b"".join(chunks), request.query_params.get("replace") == "1"))
+    except FileExistsError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=409)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+
 def guarded(app):
     """The HTTP app behind $EMUCRAFT_TOKEN, when it is set."""
     token = os.environ.get("EMUCRAFT_TOKEN")
 
     async def wrapper(scope, receive, send):
-        if token and scope["type"] == "http" and scope["path"].startswith("/mcp"):
+        if token and scope["type"] == "http" and scope["path"].startswith(("/mcp", "/fixtures")):
             from starlette.responses import JSONResponse
 
             headers = dict(scope["headers"])

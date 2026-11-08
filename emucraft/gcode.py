@@ -91,6 +91,8 @@ class Program:
         self.tool_notes: Dict[int, ToolNote] = {}
         self.stock_note: Dict[str, float] = {}
         self.stock_lines: Dict[str, int] = {}
+        self.fixture_note: Optional[str] = None  # the saved fixture setup a comment names
+        self.fixture_line: Optional[int] = None
         self.tool_point = "tip"
         self.messages: List[Message] = []
         self.dwell = 0.0  # seconds of G4 dwell
@@ -159,6 +161,7 @@ DEFAULT_COMMENT_RULES: List[Tuple[str, str]] = [
     (r"\bMAX\s*Z\s*:\s*" + NUM, "stock.zmax"),
     (r"\bUnits\s*:\s*(INCH(?:ES)?|MM|MILLIMET(?:RE|ER)S?)\b", "program.units"),
     (r"\bTool\s+Coordinates\s*:\s*(Tip|Centre|Center)\b", "program.tool_point"),
+    (r"^\s*FIXTUR(?:E|ING)(?:\s+SETUP)?\s*[:=]\s*(.+?)\s*$", "program.fixture"),
 ]
 
 # Fallback for comments no rule matched: "(<label>[:=] <number>[unit])" whose
@@ -224,7 +227,7 @@ _MASTERCAM_TOOL = re.compile(
     r"\bTOOL\s*-\s*(\d+)\s+DIA\.\s*OFF\.\s*-\s*\d+\s+LEN\.\s*-\s*\d+\s+DIA\.\s*-\s*" + NUM, re.I
 )
 
-_TEXT_FIELDS = {"kind", "name", "units", "tool_point"}
+_TEXT_FIELDS = {"kind", "name", "units", "tool_point", "fixture"}
 _INT_FIELDS = {"number", "flutes"}
 
 
@@ -853,6 +856,8 @@ class Interpreter:
             elif fld == "tool_point":
                 self.p.tool_point = "center" if value.lower().startswith("cent") else "tip"
                 self.tip_dirty = True
+            elif fld == "fixture":
+                self.p.fixture_note, self.p.fixture_line = value, li
 
     def _note_scale(self) -> float:
         """Comment values are in the block units in force when they appear."""
